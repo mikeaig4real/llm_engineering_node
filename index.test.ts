@@ -14,6 +14,16 @@ describe('Express API Tests', () => {
     });
   });
 
+  describe('GET /docs/', () => {
+    it('should return 200 OK and HTML for Swagger UI', async () => {
+      const response = await request(app).get('/docs/');
+      
+      expect(response.status).toBe(200);
+      expect(response.text).toContain('<html');
+      expect(response.text).toContain('swagger');
+    });
+  });
+
   describe('GET /health', () => {
     it('should return 200 OK and status ok', async () => {
       const response = await request(app).get('/health');
