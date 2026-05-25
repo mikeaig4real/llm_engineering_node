@@ -17,7 +17,8 @@ const openai = new OpenAI({
   },
 });
 
-const DEFAULT_PROMPT = "Hello! Tell me a one-sentence joke about programming.";
+const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
+const DEFAULT_USER_PROMPT = "Hello! Tell me a one-sentence joke about programming.";
 
 /**
  * Sends a chat completion request to the LLM via OpenRouter.
@@ -31,16 +32,24 @@ const DEFAULT_PROMPT = "Hello! Tell me a one-sentence joke about programming.";
 export async function runInference(
   messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
   modelId: string = MODEL_ID,
-  opts: Partial<OpenAI.Chat.Completions.ChatCompletionCreateParams> = {}
+  opts: Partial<OpenAI.Chat.Completions.ChatCompletionCreateParams> & {
+    returnRaw?: boolean;
+    streamCb?: (text: string) => void;
+  } = {}
 ): Promise<any> {
-  logger.info({ messages, modelId, opts }, "Sending request to LLM...");
+  const { returnRaw, streamCb, ...apiOpts } = opts;
+  logger.info({ messages, modelId, opts: apiOpts }, "Sending request to LLM...");
 
   try {
     const completion = await openai.chat.completions.create({
       model: modelId,
       messages,
-      ...opts,
+      ...apiOpts,
     });
+
+    if (returnRaw) {
+      return completion;
+    }
 
     if ('choices' in completion) {
       const responseText = completion.choices[0]?.message?.content || null;
@@ -48,8 +57,18 @@ export async function runInference(
       return responseText;
     }
 
+    // It's a stream!
     logger.info("Received streaming response from LLM");
-    return completion;
+    let fullText = "";
+    for await (const chunk of completion) {
+      const content = chunk.choices[0]?.delta?.content || "";
+      fullText += content;
+      if (streamCb) {
+        streamCb(content);
+      }
+    }
+    logger.info("Streaming complete");
+    return fullText;
   } catch (error) {
     logger.error(error, "Error occurred while calling completions library");
     throw error;
@@ -64,7 +83,10 @@ export const metadata = {
   explanations: [
     'Initialize the OpenAI client pointing to the OpenRouter base URL (https://openrouter.ai/api/v1).',
     'Pass custom headers like HTTP-Referer (for site credit) and X-Title (for client identifier).',
-    'Call the chat.completions.create endpoint, passing the target model google/gemini-2.5-flash and the user prompt.'
+    'Structure the messages: APIs expect an array representing chat turns, each with a "role" and "content".',
+    'System Role: Provides context or rules to model persona (e.g. "You are a helpful assistant") that guide the entire chat behavior.',
+    'User Role: Represents the user query to the model.',
+    'Call the chat.completions.create endpoint, passing the target model google/gemini-2.5-flash and the system + user messages.'
   ],
   agnosticCode: `import OpenAI from 'openai';
 import { config } from './config.js';
@@ -87,17 +109,27 @@ export async function runInference(prompt: string): Promise<string | null> {
 }`,
   allowableArgs: [
     {
-      name: 'prompt',
-      description: 'The prompt to send to the language model.',
-      default: DEFAULT_PROMPT
+      name: 'systemPrompt',
+      description: "The system instructions defining the model's behavior/persona.",
+      default: DEFAULT_SYSTEM_PROMPT
+    },
+    {
+      name: 'userPrompt',
+      description: 'The user query/prompt to send to the model.',
+      default: DEFAULT_USER_PROMPT
     }
   ],
   run: async (state: any) => {
-    const prompt = state.prompt || DEFAULT_PROMPT;
+    const systemContent = state.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    const userContent = state.userPrompt || DEFAULT_USER_PROMPT;
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       {
+        role: "system",
+        content: systemContent,
+      },
+      {
         role: "user",
-        content: prompt,
+        content: userContent,
       },
     ];
     return await runInference(messages);

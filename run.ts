@@ -223,9 +223,17 @@ export async function startInteractiveLesson(metadata: any) {
         
         let response;
         try {
-          response = await runWithSpinner('Calling OpenRouter API...', async () => {
-            return await metadata.run(state);
-          });
+          const useSpinner = typeof metadata.useSpinner === 'function'
+            ? metadata.useSpinner(state)
+            : (metadata.useSpinner !== false);
+
+          if (useSpinner) {
+            response = await runWithSpinner('Calling OpenRouter API...', async () => {
+              return await metadata.run(state);
+            });
+          } else {
+            response = await metadata.run(state);
+          }
         } catch (err: any) {
           response = `Error: ${err.message}`;
         }

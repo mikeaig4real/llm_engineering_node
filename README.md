@@ -112,3 +112,36 @@ When you run a lesson, the universal runner guides you through a gamified learni
 *   **Auto-Save & Checkpoints**: Your progress is automatically saved at every major step.
 *   **Graceful Exit**: You can type `exit` at any interactive prompt to save your session. The next time you start the lesson, you will be prompted to resume where you left off.
 *   **Agnostic Core Functions**: Core execution logic is completely decoupled from the runner UI, allowing functions to be cleanly imported, reused, and shared across lessons.
+
+---
+
+## Lesson 3: Advanced Inference Options (Zod Schema, Streaming & Constraints)
+
+This lesson explores several advanced inference options, reusing the decoupled `runInference` function from Lesson 1:
+1. **Multishot Prompting vs. Structured Outputs**: Compares few-shot system instructions with the OpenAI SDK's built-in Zod-validated `response_format` structures.
+2. **Streaming vs. Non-Streaming**: Triggers streaming outputs via a decoupled callback parameter (`streamCb`), demonstrating how to dynamically handle chunk deliveries.
+3. **Token Limit Constraints**: Shows how to enforce output limitations using `max_tokens` (or `max_completion_tokens`) and inspect completion metadata (`finish_reason` and token usage logs).
+
+View the complete implementation code here: [LESSON_03.ts](LESSON_03.ts)
+
+### How to Run
+
+You can launch the lesson interactively in two ways:
+
+1. **Using NPM script**:
+    ```bash
+    npm run lesson 3
+    ```
+2. **Running the lesson file directly** (via TSX):
+    ```bash
+    npx tsx LESSON_03.ts
+    ```
+
+### Selecting Modes
+
+When configuring the lesson arguments inside the interactive terminal, you can specify one of the following modes:
+*   `structured` (Default) - Runs Zod-backed JSON schema extraction.
+*   `multishot` - Performs JSON extraction using manual prompt examples.
+*   `streaming` - Outputs words in real-time as they stream from the API.
+*   `token_limit` - Enforces a maximum token boundary and logs completion reasons.
+
