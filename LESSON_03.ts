@@ -16,6 +16,10 @@ export const metadata = {
   number: '03',
   title: 'Advanced Inference Options (Zod Schema, Streaming & Constraints)',
   description: 'In this lesson, we explore completions configurations: Zod-validated Structured Outputs vs. Multishot prompting, decoupled callback-based Streaming, and max token cutoff limits.',
+  conclusion: [
+    'You have successfully explored advanced inference configurations, including Zod-validated Structured Outputs, callback-based Streaming, and max token cutoff constraints.',
+    'Feel free to inspect the codebase and run other lessons to continue your learning journey.'
+  ],
   explanations: [
     'Multishot Prompting: Format a prompt with system guidelines and examples, then manually parse JSON.',
     'Structured Outputs: Use Zod validation via zodResponseFormat to guarantee the completions payload matches our ContactSchema.',
@@ -72,7 +76,8 @@ const raw = await runInference(messages, undefined, {
   run: async (state: any) => {
     const mode = (state.mode || 'structured').trim().toLowerCase();
     const prompt = state.prompt || "John Doe is a 29 year old software engineer living in New York who loves TypeScript and Rust.";
-    const maxTokensVal = parseInt(state.maxTokens || '10', 10);
+    const maxTokensRaw = String(state.maxTokens || '10').replace(/['"]/g, '').trim();
+    const maxTokensVal = isNaN(parseInt(maxTokensRaw, 10)) ? 10 : parseInt(maxTokensRaw, 10);
 
     if (mode === 'multishot') {
       const systemPrompt = `You are a helper that extracts structured data from text and outputs it in valid JSON format.
@@ -108,7 +113,8 @@ Process the following input and return ONLY the JSON representation:`;
         const parsed = JSON.parse(resText || '{}');
         return JSON.stringify(parsed, null, 2);
       } catch (err) {
-        return `Failed to parse JSON output: ${resText}`;
+        return `Failed to parse JSON output:
+        ${ resText }`;
       }
     }
 

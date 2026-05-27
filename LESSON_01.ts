@@ -80,6 +80,10 @@ export const metadata = {
   number: '01',
   title: 'Connecting to LLMs (OpenAI SDK & OpenRouter)',
   description: 'In LLM engineering, we interact with model completion endpoints. In this lesson, we use the OpenAI SDK configured to connect to OpenRouter (using Gemini 2.5 Flash) and generate a completion response.',
+  conclusion: [
+    'You have successfully set up the OpenAI client, queried the Gemini model via OpenRouter, and rendered its response in the terminal.',
+    'Feel free to inspect the codebase and run other lessons to continue your learning journey.'
+  ],
   explanations: [
     'Initialize the OpenAI client pointing to the OpenRouter base URL (https://openrouter.ai/api/v1).',
     'Pass custom headers like HTTP-Referer (for site credit) and X-Title (for client identifier).',

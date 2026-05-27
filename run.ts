@@ -252,8 +252,18 @@ export async function startInteractiveLesson(metadata: any) {
         clearScreen();
         drawHeader(metadata.number, metadata.title);
         console.log(`${c.green}${c.bold}✓ Lesson Completed!${c.reset}\n`);
-        console.log('You have successfully set up the OpenAI client, queried the Gemini model via OpenRouter, and rendered its response in the terminal.');
-        console.log('Feel free to inspect the codebase and run other lessons to continue your learning journey.\n');
+        
+        if (metadata.conclusion) {
+          if (Array.isArray(metadata.conclusion)) {
+            metadata.conclusion.forEach((line: string) => console.log(line));
+          } else {
+            console.log(metadata.conclusion);
+          }
+          console.log();
+        } else {
+          console.log('You have successfully completed this lesson.');
+          console.log('Feel free to inspect the codebase and run other lessons to continue your learning journey.\n');
+        }
         
         clearProgress(metadata.number);
         await rl.question('Press Enter to exit the interactive lesson...');
