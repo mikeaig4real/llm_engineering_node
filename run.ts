@@ -229,10 +229,10 @@ export async function startInteractiveLesson(metadata: any) {
 
           if (useSpinner) {
             response = await runWithSpinner('Calling OpenRouter API...', async () => {
-              return await metadata.run(state);
+              return await metadata.run(state, rl);
             });
           } else {
-            response = await metadata.run(state);
+            response = await metadata.run(state, rl);
           }
         } catch (err: any) {
           response = `Error: ${err.message}`;

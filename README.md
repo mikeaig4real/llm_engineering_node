@@ -2,7 +2,7 @@
 
 A modern, high-performance, flat-structured TypeScript template designed for doing LLM engineering inside the Node.js ecosystem. It features **Express 5** (with native async error support), **Zod v4** (for robust request schema validation), **Vitest/Supertest** (for fast API testing), and **Pino** (for structured JSON logging ready for observability).
 
-Our core integrations establish connections to LLMs using the OpenAI SDK, counting and estimating tokens locally, calculating inference costs, and configuring advanced parameters (like structured schema outputs, callback-based streaming, and cutoff limits).
+Our core integrations establish connections to LLMs using the OpenAI SDK, counting and estimating tokens locally, calculating inference costs, configuring advanced parameters (like structured schema outputs, callback-based streaming, and cutoff limits), and invoking local tools/functions dynamically.
 
 ---
 
@@ -170,4 +170,30 @@ When configuring the lesson arguments inside the interactive terminal, you can s
 *   `multishot` - Performs JSON extraction using manual prompt examples.
 *   `streaming` - Outputs words in real-time as they stream from the API.
 *   `token_limit` - Enforces a maximum token boundary and logs completion reasons.
+
+---
+
+## Lesson 4: Tool Calling (Function Calling) & LLM Agents
+
+This lesson introduces "tools" (function calling) which empower models to request execution of local client-side functions, enabling them to query databases, write files, or perform dynamic computations. Here, we build an agent that manages a hosted stateful Todo list through a terminal interactive REPL loop.
+
+View the complete implementation code here: [LESSON_04.ts](LESSON_04.ts)
+
+### How to Run
+
+You can launch the lesson interactively in two ways:
+
+1. **Using NPM script**:
+    ```bash
+    npm run lesson 4
+    ```
+2. **Running the lesson file directly** (via TSX):
+    ```bash
+    npx tsx LESSON_04.ts
+    ```
+
+### Key Highlights
+*   **Tool Schema Definitions**: Shows how to structure tools as functions with parameters defined using standard JSON schema definitions.
+*   **Agnostic Code & Execution Mapping**: Implements a modular `handleToolCalls` handler that automatically executes requested actions and routes execution outcomes back to the assistant in a unified chat history.
+*   **Interactive Terminal REPL**: Launches a live terminal interface where you can chat naturally with the agent (e.g. *"add buy groceries"* or *"mark task 1 as done"*), seeing the local function triggers and updating/rendering an ASCII table in real time.
 
