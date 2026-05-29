@@ -63,7 +63,7 @@ export function renderTodosTable(): string {
   for (const todo of todos) {
     const idStr = todo.id.padEnd(2);
     const taskStr = todo.task.substring(0, 48).padEnd(48);
-    const statusStr = (todo.completed ? '✓ Done' : '⏵ Pending').padEnd(9);
+    const statusStr = (todo.completed ? 'Done' : 'Pending').padEnd(9);
     output += `│ ${idStr} │ ${taskStr} │ ${statusStr} │\n`;
   }
   
@@ -194,7 +194,7 @@ export async function handleToolCalls(
         content: JSON.stringify(result)
       });
     } catch (err: any) {
-      console.error(`\x1b[31m❌ [Tool Error] Failed calling "${name}":\x1b[0m`, err.message);
+      console.error(`\x1b[31m [Tool Error] Failed calling "${name}":\x1b[0m`, err.message);
       messages.push({
         role: 'tool',
         tool_call_id: toolCall.id,
