@@ -2,7 +2,7 @@
 
 A modern, high-performance, flat-structured TypeScript template designed for doing LLM engineering inside the Node.js ecosystem. It features **Express 5** (with native async error support), **Zod v4** (for robust request schema validation), **Vitest/Supertest** (for fast API testing), and **Pino** (for structured JSON logging ready for observability).
 
-Our first core integration establishes connection to LLMs using the OpenAI SDK (configured for OpenRouter).
+Our core integrations establish connections to LLMs using the OpenAI SDK, counting and estimating tokens locally, calculating inference costs, and configuring advanced parameters (like structured schema outputs, callback-based streaming, and cutoff limits).
 
 ---
 
@@ -112,6 +112,32 @@ When you run a lesson, the universal runner guides you through a gamified learni
 *   **Auto-Save & Checkpoints**: Your progress is automatically saved at every major step.
 *   **Graceful Exit**: You can type `exit` at any interactive prompt to save your session. The next time you start the lesson, you will be prompted to resume where you left off.
 *   **Agnostic Core Functions**: Core execution logic is completely decoupled from the runner UI, allowing functions to be cleanly imported, reused, and shared across lessons.
+
+---
+
+## Lesson 2: Tokens, Estimation, and Cost Calculation
+
+This lesson demonstrates how LLM costs are calculated and billed based on "tokens". It teaches you how to estimate token counts offline, retrieve actual billing metadata from the API response, and compare estimated vs. actual execution charges.
+
+View the complete implementation code here: [LESSON_02.ts](LESSON_02.ts)
+
+### How to Run
+
+You can launch the lesson interactively in two ways:
+
+1. **Using NPM script**:
+    ```bash
+    npm run lesson 2
+    ```
+2. **Running the lesson file directly** (via TSX):
+    ```bash
+    npx tsx LESSON_02.ts
+    ```
+
+### Key Highlights
+*   **Local Token Estimation**: Uses the lightweight `js-tiktoken` library to encode prompts locally and estimate input and output tokens offline for free.
+*   **Actual Usage Tracking**: Inspects the raw OpenRouter completion response payload to extract exact token statistics.
+*   **Cost Projection**: Performs dynamic cost calculations (in USD) using rates for Gemini 2.5 Flash on OpenRouter, alongside a price comparison if the same prompt had been run on GPT-4o.
 
 ---
 
