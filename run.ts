@@ -277,6 +277,28 @@ export async function startInteractiveLesson(metadata: any) {
   }
 }
 
+/**
+ * Automatically starts the interactive lesson if the module is executed directly.
+ * 
+ * @param moduleUrl - Typically import.meta.url from the caller module.
+ * @param metadata - The lesson metadata.
+ */
+export function runInteractiveIfDirect(moduleUrl: string, metadata: any) {
+  if (!process.argv[1]) return;
+
+  const currentFilePath = path.resolve(fileURLToPath(moduleUrl));
+  const entryFilePath = path.resolve(process.argv[1]);
+
+  const cleanCurrent = currentFilePath.replace(/\.(ts|js)$/, '').toLowerCase();
+  const cleanEntry = entryFilePath.replace(/\.(ts|js)$/, '').toLowerCase();
+
+  if (cleanCurrent === cleanEntry) {
+    startInteractiveLesson(metadata).catch((err) => {
+      console.error(`Failed to run Lesson ${metadata.number} interactively:`, err);
+    });
+  }
+}
+
 // Universal CLI Execution Handler
 async function main() {
   const args = process.argv.slice(2);

@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { encodingForModel } from 'js-tiktoken';
 import { runInference } from './LESSON_01.js';
+import { runInteractiveIfDirect } from './run.js';
 
 // Define pricing rates per 1 Million tokens
 export const RATES = {
@@ -209,19 +210,4 @@ Calculated rates if run on GPT-4o for comparison:
   }
 };
 
-// Automatically execute the interactive lesson flow if this file is run directly via node/tsx
-const isDirectRun = process.argv[1] && (
-  process.argv[1].endsWith('LESSON_02.ts') || 
-  process.argv[1].endsWith('LESSON_02.js')
-);
-
-if (isDirectRun) {
-  (async () => {
-    try {
-      const { startInteractiveLesson } = await import('./run.js');
-      await startInteractiveLesson(metadata);
-    } catch (err) {
-      console.error('Failed to run Lesson 02 interactively:', err);
-    }
-  })();
-}
+runInteractiveIfDirect(import.meta.url, metadata);

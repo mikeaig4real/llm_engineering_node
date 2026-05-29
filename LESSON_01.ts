@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { config } from './config.js';
 import { logger } from './logger.js';
+import { runInteractiveIfDirect } from './run.js';
 
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const HTTP_REFERER = 'https://github.com/mikeaig4real/llm_engineering_node';
@@ -157,19 +158,4 @@ export async function runInference(prompt: string, temperature = 0.7): Promise<s
   }
 };
 
-// Automatically execute the interactive lesson flow if this file is run directly via node/tsx
-const isDirectRun = process.argv[1] && (
-  process.argv[1].endsWith('LESSON_01.ts') || 
-  process.argv[1].endsWith('LESSON_01.js')
-);
-
-if (isDirectRun) {
-  (async () => {
-    try {
-      const { startInteractiveLesson } = await import('./run.js');
-      await startInteractiveLesson(metadata);
-    } catch (err) {
-      console.error('Failed to run Lesson 01 interactively:', err);
-    }
-  })();
-}
+runInteractiveIfDirect(import.meta.url, metadata);

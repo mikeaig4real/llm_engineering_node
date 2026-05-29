@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { z } from 'zod';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { runInference } from './LESSON_01.js';
+import { runInteractiveIfDirect } from './run.js';
 
 // Schema defining our structured contact details
 export const ContactSchema = z.object({
@@ -178,19 +179,4 @@ Metadata:
   }
 };
 
-// Automatically execute the interactive lesson flow if this file is run directly via node/tsx
-const isDirectRun = process.argv[1] && (
-  process.argv[1].endsWith('LESSON_03.ts') || 
-  process.argv[1].endsWith('LESSON_03.js')
-);
-
-if (isDirectRun) {
-  (async () => {
-    try {
-      const { startInteractiveLesson } = await import('./run.js');
-      await startInteractiveLesson(metadata);
-    } catch (err) {
-      console.error('Failed to run Lesson 03 interactively:', err);
-    }
-  })();
-}
+runInteractiveIfDirect(import.meta.url, metadata);
