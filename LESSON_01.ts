@@ -19,6 +19,7 @@ const openai = new OpenAI({
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
 const DEFAULT_USER_PROMPT = "Hello! Tell me a one-sentence joke about programming.";
+const DEFAULT_TEMPERATURE = 0.7;
 
 /**
  * Sends a chat completion request to the LLM via OpenRouter.
@@ -38,6 +39,12 @@ export async function runInference(
   } = {}
 ): Promise<any> {
   const { returnRaw, streamCb, ...apiOpts } = opts;
+
+  // Set default temperature if not provided
+  if (apiOpts.temperature === undefined) {
+    apiOpts.temperature = DEFAULT_TEMPERATURE;
+  }
+
   logger.info({ messages, modelId, opts: apiOpts }, "Sending request to LLM...");
 
   try {
@@ -90,7 +97,8 @@ export const metadata = {
     'Structure the messages: APIs expect an array representing chat turns, each with a "role" and "content".',
     'System Role: Provides context or rules to model persona (e.g. "You are a helpful assistant") that guide the entire chat behavior.',
     'User Role: Represents the user query to the model.',
-    'Call the chat.completions.create endpoint, passing the target model google/gemini-2.5-flash and the system + user messages.'
+    'Call the chat.completions.create endpoint, passing the target model google/gemini-2.5-flash and the system + user messages.',
+    'Temperature Parameter: Controls the creativity/randomness of the response. Lower values (near 0) are highly deterministic and consistent; higher values (near 1.0+) allow for more creativity and variation.'
   ],
   agnosticCode: `import OpenAI from 'openai';
 import { config } from './config.js';
@@ -104,10 +112,11 @@ const openai = new OpenAI({
   },
 });
 
-export async function runInference(prompt: string): Promise<string | null> {
+export async function runInference(prompt: string, temperature = 0.7): Promise<string | null> {
   const completion = await openai.chat.completions.create({
     model: 'google/gemini-2.5-flash',
     messages: [{ role: 'user', content: prompt }],
+    temperature,
   });
   return completion.choices[0]?.message?.content || null;
 }`,
@@ -121,11 +130,19 @@ export async function runInference(prompt: string): Promise<string | null> {
       name: 'userPrompt',
       description: 'The user query/prompt to send to the model.',
       default: DEFAULT_USER_PROMPT
+    },
+    {
+      name: 'temperature',
+      description: 'Controls randomness: 0.0 is deterministic, 0.7 is balanced, 1.0+ is creative.',
+      default: String(DEFAULT_TEMPERATURE)
     }
   ],
   run: async (state: any) => {
     const systemContent = state.systemPrompt || DEFAULT_SYSTEM_PROMPT;
     const userContent = state.userPrompt || DEFAULT_USER_PROMPT;
+    const tempRaw = String(state.temperature !== undefined ? state.temperature : DEFAULT_TEMPERATURE).replace(/['"]/g, '').trim();
+    const tempVal = isNaN(parseFloat(tempRaw)) ? DEFAULT_TEMPERATURE : parseFloat(tempRaw);
+
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       {
         role: "system",
@@ -136,7 +153,7 @@ export async function runInference(prompt: string): Promise<string | null> {
         content: userContent,
       },
     ];
-    return await runInference(messages);
+    return await runInference(messages, undefined, { temperature: tempVal });
   }
 };
 
