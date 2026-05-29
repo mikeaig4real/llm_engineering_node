@@ -147,20 +147,12 @@ export const todoTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 ];
 
 // 3. Execution mapping helper
-export async function executeTool(name: string, args: any): Promise<any> {
-  switch (name) {
-    case 'listTodos':
-      return listTodos();
-    case 'addTodo':
-      return addTodo(args.task);
-    case 'updateTodo':
-      return updateTodo(args.id, args.task, args.completed);
-    case 'deleteTodo':
-      return deleteTodo(args.id);
-    default:
-      throw new Error(`Unknown tool function: ${name}`);
-  }
-}
+export const todoToolMap: Record<string, Function> = {
+  listTodos: () => listTodos(),
+  addTodo: ({ task }: { task: string }) => addTodo(task),
+  updateTodo: ({ id, task, completed }: { id: string; task?: string; completed?: boolean }) => updateTodo(id, task, completed),
+  deleteTodo: ({ id }: { id: string }) => deleteTodo(id)
+};
 
 /**
  * Agnostic, modular helper to check, parse, and execute tool calls requested by LLM.
@@ -168,7 +160,8 @@ export async function executeTool(name: string, args: any): Promise<any> {
  */
 export async function handleToolCalls(
   completion: any,
-  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+  toolMap: Record<string, Function>
 ): Promise<boolean> {
   const choice = completion.choices[0];
   const toolCalls = choice?.message?.tool_calls;
@@ -184,11 +177,16 @@ export async function handleToolCalls(
     const { name } = toolCall.function;
     const args = JSON.parse(toolCall.function.arguments);
 
-    console.log(`\n\x1b[33m⚙️ [Tool Invocation] Calling "${name}" with args:\x1b[0m`, args);
+    console.log(`\n\x1b[33m [Tool Invocation] Calling "${name}" with args:\x1b[0m`, args);
 
     try {
-      const result = await executeTool(name, args);
-      console.log(`\x1b[32m✅ [Tool Result] Success!\x1b[0m`);
+      const func = toolMap[name];
+      if (!func) {
+        throw new Error(`Tool function "${name}" not found in toolMap.`);
+      }
+
+      const result = await func(args);
+      console.log(`\x1b[32m [Tool Result] Success!\x1b[0m`);
 
       messages.push({
         role: 'tool',
@@ -283,7 +281,7 @@ if (response.choices[0].message.tool_calls) {
           returnRaw: true
         });
 
-        const hadToolCalls = await handleToolCalls(completion, messages);
+        const hadToolCalls = await handleToolCalls(completion, messages, todoToolMap);
 
         if (hadToolCalls) {
           console.log('\x1b[2mProcessing tool results...\x1b[0m');
