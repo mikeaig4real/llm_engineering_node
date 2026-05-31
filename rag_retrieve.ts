@@ -91,7 +91,7 @@ export async function hydrateCandidates(
  * @param query - The user query text.
  * @param limit - Max number of results to return.
  */
-export async function retrieveChunks(query: string, limit = 5): Promise<RetrievalResult[]> {
+export async function retrieveChunks(query: string, limit = 10): Promise<RetrievalResult[]> {
   const timer = startTimer();
   logger.info({ query, limit }, 'Starting hybrid retrieval...');
 

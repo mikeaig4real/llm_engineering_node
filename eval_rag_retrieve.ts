@@ -10,6 +10,13 @@ import { retrieveChunks, RetrievalResult } from './rag_retrieve.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+export const METRIC_THRESHOLDS = {
+  mrrHigh: 0.35,
+  mrrMedium: 0.20,
+  coverageHigh: 0.70,
+  coverageMedium: 0.50,
+};
+
 export interface RetrievalEval {
   mrr: number;
   ndcg: number;
@@ -249,15 +256,15 @@ export async function evaluateRetrieval(
 
   const colorMetric = (val: number, padSize = 0) => {
     const str = val.toFixed(4).padEnd(padSize);
-    if (val >= 0.35) return chalk.bold.green(str);
-    if (val >= 0.20) return chalk.bold.yellow(str);
+    if (val >= METRIC_THRESHOLDS.mrrHigh) return chalk.bold.green(str);
+    if (val >= METRIC_THRESHOLDS.mrrMedium) return chalk.bold.yellow(str);
     return chalk.bold.red(str);
   };
 
   const colorPercentage = (pct: number) => {
     const text = (pct * 100).toFixed(2) + '%';
-    if (pct >= 0.70) return chalk.bold.green(text);
-    if (pct >= 0.50) return chalk.bold.yellow(text);
+    if (pct >= METRIC_THRESHOLDS.coverageHigh) return chalk.bold.green(text);
+    if (pct >= METRIC_THRESHOLDS.coverageMedium) return chalk.bold.yellow(text);
     return chalk.bold.red(text);
   };
 

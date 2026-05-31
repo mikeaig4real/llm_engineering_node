@@ -407,6 +407,7 @@ async function showMainMenu() {
           { name: 'Lesson 02: Tokens, Estimation, and Cost Calculation', value: '02' },
           { name: 'Lesson 03: Advanced Inference Options (Zod Schema, Streaming)', value: '03' },
           { name: 'Lesson 04: Tool Calling (Function Calling) & LLM Agents', value: '04' },
+          { name: 'Lesson 05: Retrieval-Augmented Generation (RAG) & CLI Chatbot', value: '05' },
           { name: 'Back to Main Menu', value: 'back' }
         ]
       }
@@ -439,8 +440,8 @@ async function showMainMenu() {
     ]);
     const spinner = ora(chalk.cyan('Executing RAG search...')).start();
     try {
-      const results = await retrieveChunks(ans.query, 5);
-      spinner.succeed(chalk.green('Search finished. Here are the top 5 results:'));
+      const results = await retrieveChunks(ans.query, 10);
+      spinner.succeed(chalk.green('Search finished. Here are the top 10 results:'));
       
       results.forEach((res, i) => {
         console.log(boxen(
@@ -497,7 +498,7 @@ program
 
 program
   .command('lesson [number]')
-  .description('Run a specific interactive lesson (1-4)')
+  .description('Run a specific interactive lesson (1-5)')
   .action(async (number) => {
     let lessonNum = number;
     if (!lessonNum) {
@@ -510,7 +511,8 @@ program
             { name: 'Lesson 01: Connecting to LLMs (OpenAI SDK & OpenRouter/Ollama)', value: '01' },
             { name: 'Lesson 02: Tokens, Estimation, and Cost Calculation', value: '02' },
             { name: 'Lesson 03: Advanced Inference Options (Zod Schema, Streaming)', value: '03' },
-            { name: 'Lesson 04: Tool Calling (Function Calling) & LLM Agents', value: '04' }
+            { name: 'Lesson 04: Tool Calling (Function Calling) & LLM Agents', value: '04' },
+            { name: 'Lesson 05: Retrieval-Augmented Generation (RAG) & CLI Chatbot', value: '05' }
           ]
         }
       ]);
@@ -553,8 +555,8 @@ program
 
     const spinner = ora(chalk.cyan('Executing RAG search...')).start();
     try {
-      const results = await retrieveChunks(searchQuery, 5);
-      spinner.succeed(chalk.green('Search finished. Here are the top 5 results:'));
+      const results = await retrieveChunks(searchQuery, 10);
+      spinner.succeed(chalk.green('Search finished. Here are the top 10 results:'));
       
       results.forEach((res, i) => {
         console.log(boxen(
