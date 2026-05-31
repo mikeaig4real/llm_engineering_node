@@ -6,28 +6,25 @@ import { runInteractiveIfDirect } from './run.js';
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const HTTP_REFERER = 'https://github.com/mikeaig4real/llm_engineering_node';
 const X_TITLE = 'LLM Engineering Node.js Lesson 01';
-const MODEL_ID = 'google/gemini-2.5-flash';
 
-// Initialize OpenAI client pointing to OpenRouter
-const openai = new OpenAI({
-  baseURL: OPENROUTER_BASE_URL,
-  apiKey: config.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    'HTTP-Referer': HTTP_REFERER,
-    'X-Title': X_TITLE,
-  },
-});
+const MODEL_ID = config.INFERENCE_MODEL;
+
+const OLLAMA_MODELS_SET = new Set<string>([
+  'llama3.2',
+  'llama3.2:latest',
+  'gemma3:4b',
+]);
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
 const DEFAULT_USER_PROMPT = "Hello! Tell me a one-sentence joke about programming.";
 const DEFAULT_TEMPERATURE = 0.7;
 
 /**
- * Sends a chat completion request to the LLM via OpenRouter.
+ * Sends a chat completion request to the LLM via OpenRouter or Ollama.
  * This is an agnostic function that can be imported and reused by other lessons.
  *
  * @param messages - Array of chat messages (role, content).
- * @param modelId - The ID of the model to use (defaults to google/gemini-2.5-flash).
+ * @param modelId - The ID of the model to use (defaults to config.INFERENCE_MODEL).
  * @param opts - Additional options for the OpenAI client completion request.
  * @returns The string response content, or null if empty.
  */
@@ -46,10 +43,37 @@ export async function runInference(
     apiOpts.temperature = DEFAULT_TEMPERATURE;
   }
 
-  logger.info({ messages, modelId, opts: apiOpts }, "Sending request to LLM...");
+  // Detect whether to use Ollama dynamically based on the target modelId or config
+  const isTargetOllama = 
+    OLLAMA_MODELS_SET.has(modelId) || 
+    config.INFERENCE_PROVIDER === 'ollama';
+
+  const clientBaseUrl = isTargetOllama 
+    ? `${config.OLLAMA_BASE_URL}/v1` 
+    : OPENROUTER_BASE_URL;
+
+  const clientApiKey = isTargetOllama 
+    ? 'ollama' 
+    : config.OPENROUTER_API_KEY || 'dummy_key';
+
+  const clientHeaders = isTargetOllama 
+    ? {} 
+    : {
+        'HTTP-Referer': HTTP_REFERER,
+        'X-Title': X_TITLE,
+      };
+
+  // Initialize OpenAI client dynamically on-the-fly
+  const activeClient = new OpenAI({
+    baseURL: clientBaseUrl,
+    apiKey: clientApiKey,
+    defaultHeaders: clientHeaders,
+  });
+
+  logger.info({ messages, modelId, opts: apiOpts, baseUrl: clientBaseUrl }, "Sending request to LLM...");
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await activeClient.chat.completions.create({
       model: modelId,
       messages,
       ...apiOpts,
@@ -86,36 +110,33 @@ export async function runInference(
 // Lesson Metadata consumed by the interactive runner CLI
 export const metadata = {
   number: '01',
-  title: 'Connecting to LLMs (OpenAI SDK & OpenRouter)',
-  description: 'In LLM engineering, we interact with model completion endpoints. In this lesson, we use the OpenAI SDK configured to connect to OpenRouter (using Gemini 2.5 Flash) and generate a completion response.',
+  title: 'Connecting to LLMs (OpenAI SDK & OpenRouter/Ollama)',
+  description: 'In LLM engineering, we interact with model completion endpoints. In this lesson, we use the OpenAI SDK configured to connect to OpenRouter or local Ollama and generate a completion response.',
   conclusion: [
-    'You have successfully set up the OpenAI client, queried the Gemini model via OpenRouter, and rendered its response in the terminal.',
+    'You have successfully set up the OpenAI client, queried the selected model, and rendered its response in the terminal.',
     'Feel free to inspect the codebase and run other lessons to continue your learning journey.'
   ],
   explanations: [
-    'Initialize the OpenAI client pointing to the OpenRouter base URL (https://openrouter.ai/api/v1).',
-    'Pass custom headers like HTTP-Referer (for site credit) and X-Title (for client identifier).',
+    'Initialize the OpenAI client pointing to the target base URL.',
+    'For OpenRouter, connect to https://openrouter.ai/api/v1. For Ollama, connect to http://localhost:11434/v1.',
     'Structure the messages: APIs expect an array representing chat turns, each with a "role" and "content".',
     'System Role: Provides context or rules to model persona (e.g. "You are a helpful assistant") that guide the entire chat behavior.',
     'User Role: Represents the user query to the model.',
-    'Call the chat.completions.create endpoint, passing the target model google/gemini-2.5-flash and the system + user messages.',
+    'Call the chat.completions.create endpoint, passing the target model and the system + user messages.',
     'Temperature Parameter: Controls the creativity/randomness of the response. Lower values (near 0) are highly deterministic and consistent; higher values (near 1.0+) allow for more creativity and variation.'
   ],
   agnosticCode: `import OpenAI from 'openai';
 import { config } from './config.js';
 
-const openai = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: config.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    'HTTP-Referer': 'https://github.com/mikeaig4real/llm_engineering_node',
-    'X-Title': 'LLM Engineering Node.js Lesson 01',
-  },
-});
-
 export async function runInference(prompt: string, temperature = 0.7): Promise<string | null> {
+  const isOllama = config.INFERENCE_PROVIDER === 'ollama';
+  const openai = new OpenAI({
+    baseURL: isOllama ? 'http://localhost:11434/v1' : 'https://openrouter.ai/api/v1',
+    apiKey: isOllama ? 'ollama' : config.OPENROUTER_API_KEY,
+  });
+
   const completion = await openai.chat.completions.create({
-    model: 'google/gemini-2.5-flash',
+    model: config.INFERENCE_MODEL,
     messages: [{ role: 'user', content: prompt }],
     temperature,
   });

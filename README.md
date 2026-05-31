@@ -197,3 +197,115 @@ You can launch the lesson interactively in two ways:
 *   **Agnostic Code & Execution Mapping**: Implements a modular `handleToolCalls` handler that automatically executes requested actions and routes execution outcomes back to the assistant in a unified chat history.
 *   **Interactive Terminal REPL**: Launches a live terminal interface where you can chat naturally with the agent (e.g. *"add buy groceries"* or *"mark task 1 as done"*), seeing the local function triggers and updating/rendering an ASCII table in real time.
 
+---
+
+## Lesson 5: Designing and Optimizing a Hybrid RAG Retrieval Engine
+
+This lesson documents the design, implementation, and tuning of a production-ready **Hybrid Retrieval-Augmented Generation (RAG) Engine** from scratch. It builds upon the core AI and tooling skills from Lessons 1–4, shifting the focus to high-performance document indexing, vector searches, full-text inverted indexes, and retrieval evaluation.
+
+### How We Achieved Our Current Design
+
+To build a decoupled and highly testable retrieval system, we established an abstract interface architecture (`interfaces.ts`) and constructed three dedicated storage adapters:
+1.  **Relational Metadata Store (`sqlite_database.ts`)**: Powered by `better-sqlite3`. It indexes rich metadata (like file names, relative paths, sizes, and timestamps) and serializes complex parsed Markdown objects (tables, lists) as JSON strings.
+2.  **Full-Text Inverted Index (`orama_index.ts`)**: Utilizes `@orama/orama` v3 to handle token-based full-text keyword matching on `contentText`, `docName`, and `docRelativePath`.
+3.  **Dense Vector Index (`hnsw_index.ts`)**: Uses `hnswlib-node` to index high-dimensional embeddings (1024-dimensional vectors from a local or hosted `bge-large` model) using `cosine` distance metrics, mapping neighbor positions directly back to SQLite primary keys (`sqliteId`).
+4.  **RAG Resource Manager (`rag_resources.ts`)**: Implements a singleton manager to keep active database connections, vector stores, and model loaders warm throughout the CLI and server runtime.
+
+At query time, the system performs parallel retrievals across both Orama and HNSWLib, fusing their ranking candidates using **Reciprocal Rank Fusion (RRF)**:
+$$RRF(d) = \sum_{m \in M} \frac{1}{60 + \text{rank}_m(d)}$$
+The top candidate chunks are then hydrated directly from SQLite and returned as structured search snippets.
+
+```mermaid
+flowchart TD
+    %% Ingestion Flow
+    subgraph Ingestion Pipeline
+        Source[Source Markdown Files] --> Parser[Markdown Element Parser]
+        Parser --> Merger[Context-Aware Heading Merger]
+        Merger --> Chunker[Dual-Stage Chunker]
+        
+        Chunker --> DB_Ins[SQLite Insert]
+        Chunker --> Embed[Ollama bge-large Embedder]
+        
+        DB_Ins --> SQL_DB[(SQLite DB)]
+        Embed --> HNSW_Ins[HNSW Vector Index Insert]
+        HNSW_Ins --> HNSW_DB[(HNSW Index)]
+        
+        Merger --> Orama_Ins[Orama Index Insert]
+        Orama_Ins --> Orama_DB[(Orama Index)]
+    end
+
+    %% Retrieval Flow
+    subgraph Retrieval Pipeline
+        Query[Search Query] --> Prefix[BGE Query Prefixing]
+        Query --> Keyword_Search[Orama Keyword Search]
+        Prefix --> Dense_Search[HNSW Vector Search]
+        
+        Keyword_Search --> Candidates_K[Top 30 Keyword Candidates]
+        Dense_Search --> Candidates_V[Top 30 Vector Candidates]
+        
+        Candidates_K & Candidates_V --> RRF[Reciprocal Rank Fusion]
+        RRF --> RRF_Sort[Sorted Top 10 Candidates]
+        RRF_Sort --> SQLite_Hydration[SQLite Node Hydration]
+        SQLite_Hydration --> RAG_Output[Final Hydrated Snippets]
+    end
+```
+
+### Key Engineering Challenges & Solutions
+
+During evaluation, our retrieval pipeline originally performed below expectations. Through systematic diagnostics, we identified and solved three core RAG issues:
+
+*   **Challenge 1: Vector Space Desynchronization & Model Alignment**
+    *   *Issue*: Cosine similarity searches returned near-orthogonal results, leaving target documents outside the top 50 retrieved items.
+    *   *Diagnosis*: The `bge-large` model family requires specific instruction prefixes for query vectors to align them with indexed passage vectors.
+    *   *Solution*: We updated `rag_retrieve.ts` to automatically detect BGE models and prepend the required query prefix:
+        ```typescript
+        let embedQuery = query;
+        if (config.EMBEDDING_MODEL.toLowerCase().includes('bge')) {
+          embedQuery = `Represent this sentence for searching relevant passages: ${query}`;
+        }
+        ```
+*   **Challenge 2: Stopword Noise Pollution in Keyword Search**
+    *   *Issue*: On direct questions, Orama keyword searches were dominated by documents that did not contain the actual answer but frequently used common helper words (e.g. `"is"`, `"where"`, `"the"`).
+    *   *Diagnosis*: Without stopwords filtering, common query terms generated high BM25 term scores, crowding out target documents containing rare search keywords like `"headquarters"`.
+    *   *Solution*: We integrated a robust custom stopword list into Orama's tokenizer configuration at initialization:
+        ```typescript
+        this.db = create({
+          schema: { ... },
+          components: {
+            tokenizer: {
+              stopWords: ENGLISH_STOPWORDS, // 100+ standard English stopwords
+            },
+          },
+        });
+        ```
+*   **Challenge 3: Information Loss on Chunk Boundaries (Heading/Detail Split)**
+    *   *Issue*: For questions querying section titles (e.g., *"What is Insurellm's vision statement?"*), the system failed to retrieve the text details.
+    *   *Diagnosis*: Naive markdown parsing split headings and paragraphs into separate chunks. The detail paragraph lost its heading context ("Vision Statement" / "Insurellm") and was unretrievable, while the heading chunk contained no details.
+    *   *Solution*: We added **Context-Aware Heading Merging** in `rag_ingest.ts`. During parsing, when the pipeline encounters a markdown section heading, it automatically merges it with its immediate succeeding paragraph, list, or table element:
+        ```typescript
+        if (el.type === 'heading' && i + 1 < rawElements.length && rawElements[i + 1].type !== 'heading') {
+          const nextEl = rawElements[i + 1];
+          elements.push({
+            ...el,
+            text: `${el.text}\n${nextEl.text}`,
+            raw: `${el.raw}\n${nextEl.raw}`,
+            // Merge other metadata...
+          });
+          i++;
+        }
+        ```
+
+### Final Retrieval Evaluation Benchmarks (150 Questions)
+
+Following the implementation of these optimizations, a full evaluation run on the golden dataset of 150 questions demonstrated significant performance improvements:
+*   **Mean Reciprocal Rank (MRR)**: `0.6828`
+*   **Mean nDCG**: `0.7202`
+*   **Keyword Coverage**: `91.49%` (344 / 376 keywords found in retrieved snippets)
+*   **Mean Item Coverage**: `91.82%`
+
+#### Performance Breakdown by Category
+*   **`temporal` (`0.7948` MRR / `0.8180` nDCG)**: Highly distinct date/timeline keywords yield near-perfect retrieval.
+*   **`numerical` (`0.7458` MRR / `0.7861` nDCG)**: Accurate numerical matching across contracts.
+*   **`direct_fact` (`0.7041` MRR / `0.7411` nDCG)**: Facts successfully routed to top ranks due to stopword filtering and heading merging.
+*   **`spanning` (`0.5487` MRR / `0.6107` nDCG)**: Solid retrieval quality considering that spanning queries target information distributed across multiple document regions.
+

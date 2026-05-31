@@ -1,67 +1,24 @@
-import { parseArgs } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import readline from 'node:readline/promises';
+import chalk from 'chalk';
+import ora from 'ora';
+import inquirer from 'inquirer';
+import { Command } from 'commander';
+import boxen from 'boxen';
+
+import { ingestDocuments } from './rag_ingest.js';
+import { retrieveChunks } from './rag_retrieve.js';
+import { evaluateRetrieval } from './eval_rag_retrieve.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PROGRESS_FILE = path.join(__dirname, '.lesson_progress.json');
 
-// Color Utilities
-export const c = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  red: '\x1b[31m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  magenta: '\x1b[35m',
-  cyan: '\x1b[36m',
-  white: '\x1b[37m',
-  bgBlue: '\x1b[44m',
-  bgCyan: '\x1b[46m',
-};
-
-// UI Drawings
+// UI Drawing utilities
 export function clearScreen() {
   process.stdout.write('\x1Bc');
-}
-
-export function drawHeader(lessonNumber: string, title: string) {
-  const line = '═'.repeat(title.length + 16);
-  console.log(`${c.cyan}${c.bold}╔${line}╗`);
-  console.log(`║   LESSON ${lessonNumber}: ${title}  ║`);
-  console.log(`╚${line}╝${c.reset}\n`);
-}
-
-export function drawCard(title: string, content: string) {
-  console.log(`${c.yellow}┌── ${title} ──────────────────────────────────────────────────${c.reset}`);
-  content.split('\n').forEach((line) => {
-    console.log(`  ${line}`);
-  });
-  console.log(`${c.yellow}└─────────────────────────────────────────────────────────────${c.reset}\n`);
-}
-
-// Custom Spinner
-export async function runWithSpinner<T>(message: string, action: () => Promise<T>): Promise<T> {
-  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-  let i = 0;
-  
-  const timer = setInterval(() => {
-    process.stdout.write(`\r${c.cyan}${frames[i]}${c.reset} ${message}`);
-    i = (i + 1) % frames.length;
-  }, 80);
-
-  try {
-    const result = await action();
-    return result;
-  } finally {
-    clearInterval(timer);
-    process.stdout.write(`\r\x1b[K`); // Clear line
-  }
 }
 
 // Progress Persistence Structures
@@ -89,7 +46,7 @@ export async function saveProgress(lessonNumber: string, stepId: string, savedDa
     };
     fs.writeFileSync(PROGRESS_FILE, JSON.stringify(db, null, 2), 'utf-8');
   } catch (error) {
-    // Fail silently to avoid interrupting the lesson flow
+    // Fail silently
   }
 }
 
@@ -116,27 +73,8 @@ export function clearProgress(lessonNumber: string) {
   }
 }
 
-// Interactive helper for questioning to allow 'exit' saving flow
-async function askQuestion(
-  rl: readline.Interface,
-  query: string,
-  stepId: string,
-  lessonNumber: string,
-  state: any
-): Promise<string> {
-  const answer = await rl.question(query);
-  if (answer.trim().toLowerCase() === 'exit') {
-    await saveProgress(lessonNumber, stepId, state);
-    console.log(`\n${c.yellow}Progress saved at step: ${stepId}. You can resume Lesson ${lessonNumber} later!${c.reset}`);
-    rl.close();
-    process.exit(0);
-  }
-  return answer;
-}
-
 // Main Interactive Runner
 export async function startInteractiveLesson(metadata: any) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   let currentStep = 'WELCOME';
   let state: any = {};
 
@@ -144,10 +82,22 @@ export async function startInteractiveLesson(metadata: any) {
   const saved = loadProgress(metadata.number);
   if (saved) {
     clearScreen();
-    console.log(`${c.yellow}${c.bold}Saved progress found for Lesson ${metadata.number}!${c.reset}`);
-    console.log(`Saved step: ${c.cyan}${saved.currentStep}${c.reset} (from ${new Date(saved.timestamp).toLocaleString()})\n`);
-    const answer = await rl.question('Do you want to resume? (y/n) ');
-    if (answer.trim().toLowerCase() === 'y' || answer.trim().toLowerCase() === 'yes') {
+    console.log(boxen(
+      `${chalk.bold.yellow(`Saved progress found for Lesson ${metadata.number}!`)}\n` +
+      `Saved step: ${chalk.cyan(saved.currentStep)} (from ${new Date(saved.timestamp).toLocaleString()})`,
+      { padding: 1, borderStyle: 'round', borderColor: 'yellow' }
+    ));
+    
+    const answers = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'resume',
+        message: 'Do you want to resume?',
+        default: true
+      }
+    ]);
+    
+    if (answers.resume) {
       currentStep = saved.currentStep;
       state = saved.savedData || {};
     } else {
@@ -160,128 +110,210 @@ export async function startInteractiveLesson(metadata: any) {
       if (currentStep === 'WELCOME') {
         await saveProgress(metadata.number, 'WELCOME', state);
         clearScreen();
-        drawHeader(metadata.number, metadata.title);
-        console.log(`${c.bold}Description:${c.reset}`);
-        console.log(metadata.description);
-        console.log(`\n${c.dim}(Tip: You can type 'exit' at any prompt to save progress and quit)${c.reset}\n`);
         
-        await askQuestion(rl, 'Press Enter to continue...', 'WELCOME', metadata.number, state);
+        console.log(boxen(
+          `${chalk.bold.yellow(`LESSON ${metadata.number}: ${metadata.title}`)}\n\n` +
+          `${chalk.white(metadata.description)}`,
+          { padding: 1, borderStyle: 'round', borderColor: 'yellow' }
+        ));
+        
+        console.log(chalk.dim("\n(Tip: You can type 'exit' at any prompt to save progress and quit)\n"));
+        
+        const ans = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'continue',
+            message: chalk.dim("Press Enter to continue...")
+          }
+        ]);
+        if (ans.continue.trim().toLowerCase() === 'exit') {
+          await saveProgress(metadata.number, 'WELCOME', state);
+          console.log(chalk.yellow(`Progress saved at step: WELCOME. You can resume Lesson ${metadata.number} later!`));
+          break;
+        }
         currentStep = 'EXPLANATION';
       }
 
       else if (currentStep === 'EXPLANATION') {
         await saveProgress(metadata.number, 'EXPLANATION', state);
         clearScreen();
-        drawHeader(metadata.number, metadata.title);
-        console.log(`${c.bold}What we are about to do:${c.reset}\n`);
-        metadata.explanations.forEach((exp: string, index: number) => {
-          console.log(`${c.green}${index + 1}.${c.reset} ${exp}`);
-        });
-        console.log();
         
-        await askQuestion(rl, 'Press Enter to continue to Code Preview...', 'EXPLANATION', metadata.number, state);
+        const explanationLines = metadata.explanations.map((exp: string, index: number) => {
+          return `${chalk.green(index + 1)}. ${exp}`;
+        }).join('\n');
+        
+        console.log(boxen(
+          `${chalk.bold.magenta("What we are about to do:")}\n\n${explanationLines}`,
+          { padding: 1, borderStyle: 'single', borderColor: 'magenta' }
+        ));
+        
+        const ans = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'continue',
+            message: chalk.dim("Press Enter to continue to Code Preview...")
+          }
+        ]);
+        if (ans.continue.trim().toLowerCase() === 'exit') {
+          await saveProgress(metadata.number, 'EXPLANATION', state);
+          console.log(chalk.yellow(`Progress saved at step: EXPLANATION. You can resume Lesson ${metadata.number} later!`));
+          break;
+        }
         currentStep = 'CODE_PREVIEW';
       }
 
       else if (currentStep === 'CODE_PREVIEW') {
         await saveProgress(metadata.number, 'CODE_PREVIEW', state);
         clearScreen();
-        drawHeader(metadata.number, metadata.title);
-        console.log(`${c.bold}Lesson Function Code:${c.reset}\n`);
-        drawCard('LESSON FUNCTION', metadata.agnosticCode);
         
-        await askQuestion(rl, 'Press Enter to configure arguments...', 'CODE_PREVIEW', metadata.number, state);
+        console.log(boxen(
+          chalk.gray(metadata.agnosticCode),
+          {
+            title: chalk.bold.blue(' Agnostic Code Preview '),
+            titleAlignment: 'left',
+            borderStyle: 'single',
+            borderColor: 'blue',
+            padding: 1
+          }
+        ));
+        
+        const ans = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'continue',
+            message: chalk.dim("Press Enter to configure arguments...")
+          }
+        ]);
+        if (ans.continue.trim().toLowerCase() === 'exit') {
+          await saveProgress(metadata.number, 'CODE_PREVIEW', state);
+          console.log(chalk.yellow(`Progress saved at step: CODE_PREVIEW. You can resume Lesson ${metadata.number} later!`));
+          break;
+        }
         currentStep = 'INPUT_ARGS';
       }
 
       else if (currentStep === 'INPUT_ARGS') {
         await saveProgress(metadata.number, 'INPUT_ARGS', state);
         clearScreen();
-        drawHeader(metadata.number, metadata.title);
-        console.log(`${c.bold}Configure Arguments:${c.reset}\n`);
         
-        for (const arg of metadata.allowableArgs) {
-          console.log(`${c.cyan}${arg.name}${c.reset}: ${arg.description}`);
-          const defaultVal = state[arg.name] !== undefined ? state[arg.name] : arg.default;
-          console.log(`${c.dim}(Default: "${defaultVal}")${c.reset}`);
-          const inputVal = await askQuestion(rl, `Enter value for ${arg.name}: `, 'INPUT_ARGS', metadata.number, state);
-          state[arg.name] = inputVal.trim() !== '' ? inputVal : defaultVal;
-          console.log();
+        console.log(chalk.bold('Configure Arguments:\n'));
+        
+        if (metadata.allowableArgs && metadata.allowableArgs.length > 0) {
+          const promptQuestions = metadata.allowableArgs.map((arg: any) => {
+            const defaultVal = state[arg.name] !== undefined ? state[arg.name] : arg.default;
+            return {
+              type: 'input',
+              name: arg.name,
+              message: chalk.cyan(`Enter value for ${arg.name} (${arg.description}):`),
+              default: defaultVal
+            };
+          });
+          
+          const answers = await inquirer.prompt(promptQuestions);
+          Object.assign(state, answers);
+        } else {
+          console.log(chalk.dim('No configuration arguments required for this lesson.'));
         }
 
         await saveProgress(metadata.number, 'INPUT_ARGS', state);
         
-        await askQuestion(rl, 'Press Enter to execute inference...', 'INPUT_ARGS', metadata.number, state);
+        const ans = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'continue',
+            message: chalk.dim("Press Enter to execute lesson task...")
+          }
+        ]);
+        if (ans.continue.trim().toLowerCase() === 'exit') {
+          await saveProgress(metadata.number, 'INPUT_ARGS', state);
+          console.log(chalk.yellow(`Progress saved at step: INPUT_ARGS. You can resume Lesson ${metadata.number} later!`));
+          break;
+        }
         currentStep = 'EXECUTION';
       }
 
       else if (currentStep === 'EXECUTION') {
         await saveProgress(metadata.number, 'EXECUTION', state);
         clearScreen();
-        drawHeader(metadata.number, metadata.title);
-        console.log(`${c.bold}Running Inference...${c.reset}\n`);
         
-        let response;
-        try {
-          const useSpinner = typeof metadata.useSpinner === 'function'
-            ? metadata.useSpinner(state)
-            : (metadata.useSpinner !== false);
+        console.log(chalk.bold('Executing Lesson Task...\n'));
+        
+        const useSpinner = typeof metadata.useSpinner === 'function'
+          ? metadata.useSpinner(state)
+          : (metadata.useSpinner !== false);
 
-          if (useSpinner) {
-            response = await runWithSpinner('Calling OpenRouter API...', async () => {
-              return await metadata.run(state, rl);
-            });
-          } else {
-            response = await metadata.run(state, rl);
+        let response;
+        if (useSpinner) {
+          const spinner = ora(chalk.cyan('Running inference...')).start();
+          try {
+            response = await metadata.run(state);
+            spinner.succeed(chalk.green('Task executed successfully!'));
+          } catch (err: any) {
+            spinner.fail(chalk.red('Task execution failed!'));
+            response = `Error: ${err.message}`;
           }
-        } catch (err: any) {
-          response = `Error: ${err.message}`;
+        } else {
+          try {
+            response = await metadata.run(state);
+          } catch (err: any) {
+            response = `Error: ${err.message}`;
+          }
         }
         
         state.result = response;
         await saveProgress(metadata.number, 'CONCLUSION', state);
         
-        console.log(`\n${c.green}${c.bold}Response received:${c.reset}`);
-        drawCard('OUTPUT RESULT', response || 'No response returned.');
+        console.log(`\n${chalk.green.bold('Response received:')}`);
+        console.log(boxen(
+          chalk.white(response || 'No response returned.'),
+          { padding: 1, borderStyle: 'round', borderColor: 'green' }
+        ));
         
-        await askQuestion(rl, 'Press Enter to view the lesson conclusion...', 'CONCLUSION', metadata.number, state);
+        const ans = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'continue',
+            message: chalk.dim("Press Enter to view the lesson conclusion...")
+          }
+        ]);
+        if (ans.continue.trim().toLowerCase() === 'exit') {
+          await saveProgress(metadata.number, 'CONCLUSION', state);
+          console.log(chalk.yellow(`Progress saved at step: CONCLUSION. You can resume Lesson ${metadata.number} later!`));
+          break;
+        }
         currentStep = 'CONCLUSION';
       }
 
       else if (currentStep === 'CONCLUSION') {
         clearScreen();
-        drawHeader(metadata.number, metadata.title);
-        console.log(`${c.green}${c.bold}✓ Lesson Completed!${c.reset}\n`);
         
-        if (metadata.conclusion) {
-          if (Array.isArray(metadata.conclusion)) {
-            metadata.conclusion.forEach((line: string) => console.log(line));
-          } else {
-            console.log(metadata.conclusion);
-          }
-          console.log();
-        } else {
-          console.log('You have successfully completed this lesson.');
-          console.log('Feel free to inspect the codebase and run other lessons to continue your learning journey.\n');
-        }
+        const conclusionText = Array.isArray(metadata.conclusion)
+          ? metadata.conclusion.join('\n\n')
+          : metadata.conclusion;
+          
+        console.log(boxen(
+          `${chalk.bold.green('✓ Lesson Completed!')}\n\n${conclusionText}`,
+          { padding: 1, borderStyle: 'double', borderColor: 'green' }
+        ));
         
         clearProgress(metadata.number);
-        await rl.question('Press Enter to exit the interactive lesson...');
-        rl.close();
+        await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'exit',
+            message: chalk.dim('Press Enter to return to main menu...')
+          }
+        ]);
         break;
       }
     }
   } catch (error) {
-    console.error('\nAn error occurred during interactive session:', error);
-    rl.close();
+    console.error(chalk.red('\nAn error occurred during interactive session:'), error);
   }
 }
 
 /**
  * Automatically starts the interactive lesson if the module is executed directly.
- * 
- * @param moduleUrl - Typically import.meta.url from the caller module.
- * @param metadata - The lesson metadata.
  */
 export function runInteractiveIfDirect(moduleUrl: string, metadata: any) {
   if (!process.argv[1]) return;
@@ -294,30 +326,19 @@ export function runInteractiveIfDirect(moduleUrl: string, metadata: any) {
 
   if (cleanCurrent === cleanEntry) {
     startInteractiveLesson(metadata).catch((err) => {
-      console.error(`Failed to run Lesson ${metadata.number} interactively:`, err);
+      console.error(chalk.red(`Failed to run Lesson ${metadata.number} interactively:`), err);
     });
   }
 }
 
-// Universal CLI Execution Handler
-async function main() {
-  const args = process.argv.slice(2);
-  const lessonArg = args[0];
-
-  if (!lessonArg) {
-    console.error(`\x1b[31mError: Please specify a lesson number (e.g., 1 or 01).\x1b[0m`);
-    console.error('Usage: npm run lesson <lesson_number> [arguments]');
-    process.exit(1);
-  }
-
-  const lessonNumber = lessonArg.padStart(2, '0');
-  const filename = `LESSON_${lessonNumber}.ts`;
+async function launchLesson(lessonNumber: string) {
+  const formattedNum = lessonNumber.padStart(2, '0');
+  const filename = `LESSON_${formattedNum}.ts`;
   const filePath = path.join(__dirname, filename);
 
   if (!fs.existsSync(filePath)) {
-    console.error(`\x1b[31mError: Lesson file "${filename}" not found.\x1b[0m`);
-    console.error(`Looked at path: ${filePath}`);
-    process.exit(1);
+    console.error(chalk.red(`Error: Lesson file "${filename}" not found.`));
+    return;
   }
 
   try {
@@ -327,21 +348,274 @@ async function main() {
     if (lessonModule.metadata && typeof lessonModule.metadata.run === 'function') {
       await startInteractiveLesson(lessonModule.metadata);
     } else {
-      console.error(`\x1b[31mError: Lesson ${lessonNumber} does not export "metadata" or its metadata does not define a "run" function.\x1b[0m`);
-      process.exit(1);
+      console.error(chalk.red(`Error: Lesson ${formattedNum} does not export "metadata" or "run" function.`));
     }
   } catch (error) {
-    console.error(`\x1b[31mError executing Lesson ${lessonArg}:\x1b[0m`, error);
-    process.exit(1);
+    console.error(chalk.red(`Error executing Lesson ${lessonNumber}:`), error);
   }
 }
 
-// Execute CLI runner if run directly via tsx/node
+async function promptReturnToMenu() {
+  console.log();
+  await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'back',
+      message: chalk.dim('Press Enter to return to main menu...')
+    }
+  ]);
+  await showMainMenu();
+}
+
+async function showMainMenu() {
+  clearScreen();
+  console.log(boxen(
+    chalk.bold.cyan("LLM Engineering Bootcamp - Node.js CLI Tools"),
+    {
+      padding: 1,
+      margin: 1,
+      borderStyle: 'double',
+      borderColor: 'cyan',
+      title: 'Interactive Dashboard',
+      titleAlignment: 'center'
+    }
+  ));
+
+  const answers = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'action',
+      message: 'Choose an action to perform:',
+      choices: [
+        { name: 'Run Interactive Lesson', value: 'lesson' },
+        { name: 'Run Document Ingestion (rag_ingest)', value: 'ingest' },
+        { name: 'Test Retrieval (rag_retrieve)', value: 'retrieve' },
+        { name: 'Run Retrieval Evaluation (eval_rag_retrieve)', value: 'eval' },
+        { name: 'Exit', value: 'exit' }
+      ]
+    }
+  ]);
+
+  if (answers.action === 'lesson') {
+    const lessonAnswers = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'lesson',
+        message: 'Select a lesson to run:',
+        choices: [
+          { name: 'Lesson 01: Connecting to LLMs (OpenAI SDK & OpenRouter/Ollama)', value: '01' },
+          { name: 'Lesson 02: Tokens, Estimation, and Cost Calculation', value: '02' },
+          { name: 'Lesson 03: Advanced Inference Options (Zod Schema, Streaming)', value: '03' },
+          { name: 'Lesson 04: Tool Calling (Function Calling) & LLM Agents', value: '04' },
+          { name: 'Back to Main Menu', value: 'back' }
+        ]
+      }
+    ]);
+
+    if (lessonAnswers.lesson === 'back') {
+      await showMainMenu();
+      return;
+    }
+    await launchLesson(lessonAnswers.lesson);
+    await showMainMenu();
+  } else if (answers.action === 'ingest') {
+    const spinner = ora(chalk.cyan('Running document ingestion...')).start();
+    try {
+      spinner.stop(); // Stop spinner to avoid garbling Pino log outputs
+      await ingestDocuments();
+      console.log(chalk.green('\n[SUCCESS] Document Ingestion completed successfully!'));
+    } catch (err: any) {
+      console.error(chalk.red(`\n[ERROR] Document Ingestion failed: ${err.message}`));
+    }
+    await promptReturnToMenu();
+  } else if (answers.action === 'retrieve') {
+    const ans = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'query',
+        message: chalk.cyan('Enter search query:'),
+        validate: input => input.trim() ? true : 'Query cannot be empty.'
+      }
+    ]);
+    const spinner = ora(chalk.cyan('Executing RAG search...')).start();
+    try {
+      const results = await retrieveChunks(ans.query, 5);
+      spinner.succeed(chalk.green('Search finished. Here are the top 5 results:'));
+      
+      results.forEach((res, i) => {
+        console.log(boxen(
+          `${chalk.bold.yellow(`[Result ${i + 1}] Score: ${res.score.toFixed(4)}`)}\n` +
+          `${chalk.cyan('Source:')} ${res.metadata.docRelativePath} (${res.metadata.contentType})\n` +
+          `${chalk.dim('---')}\n` +
+          `${chalk.white(res.content)}`,
+          { padding: 0.5, margin: 0.5, borderStyle: 'round', borderColor: 'cyan' }
+        ));
+      });
+    } catch (err: any) {
+      spinner.fail(chalk.red(`Retrieval failed: ${err.message}`));
+    }
+    await promptReturnToMenu();
+  } else if (answers.action === 'eval') {
+    const ans = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'k',
+        message: chalk.cyan('Enter k (number of top results to retrieve):'),
+        default: '10',
+        validate: input => isNaN(parseInt(input)) ? 'Please enter a valid number.' : true
+      }
+    ]);
+    const spinner = ora(chalk.cyan('Running retrieval evaluation...')).start();
+    try {
+      spinner.stop(); // Stop spinner to avoid garbling Pino log outputs
+      await evaluateRetrieval(parseInt(ans.k));
+      console.log(chalk.green('\n[SUCCESS] Retrieval Evaluation completed!'));
+    } catch (err: any) {
+      console.error(chalk.red(`\n[ERROR] Retrieval Evaluation failed: ${err.message}`));
+    }
+    await promptReturnToMenu();
+  } else {
+    console.log(chalk.cyan('Goodbye!'));
+    process.exit(0);
+  }
+}
+
+// Unified Commander CLI Configuration
+const program = new Command();
+
+program
+  .name('rag-cli')
+  .description('A unified CLI to run lessons, ingestion, and evaluation of the RAG pipeline.')
+  .version('1.0.0');
+
+program
+  .command('menu')
+  .description('Launch the interactive CLI dashboard (default)')
+  .action(async () => {
+    await showMainMenu();
+  });
+
+program
+  .command('lesson [number]')
+  .description('Run a specific interactive lesson (1-4)')
+  .action(async (number) => {
+    let lessonNum = number;
+    if (!lessonNum) {
+      const answers = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'lesson',
+          message: 'Select a lesson to run:',
+          choices: [
+            { name: 'Lesson 01: Connecting to LLMs (OpenAI SDK & OpenRouter/Ollama)', value: '01' },
+            { name: 'Lesson 02: Tokens, Estimation, and Cost Calculation', value: '02' },
+            { name: 'Lesson 03: Advanced Inference Options (Zod Schema, Streaming)', value: '03' },
+            { name: 'Lesson 04: Tool Calling (Function Calling) & LLM Agents', value: '04' }
+          ]
+        }
+      ]);
+      lessonNum = answers.lesson;
+    }
+    await launchLesson(lessonNum);
+  });
+
+program
+  .command('ingest')
+  .description('Run document ingestion pipeline')
+  .action(async () => {
+    try {
+      await ingestDocuments();
+      console.log(chalk.green('\n[SUCCESS] Document Ingestion completed successfully!'));
+      process.exit(0);
+    } catch (err: any) {
+      console.error(chalk.red(`\n[ERROR] Document Ingestion failed: ${err.message}`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('retrieve')
+  .description('Test retrieval functionality')
+  .argument('[query]', 'Query text to search for')
+  .action(async (query) => {
+    let searchQuery = query;
+    if (!searchQuery) {
+      const ans = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'query',
+          message: chalk.cyan('Enter search query:'),
+          validate: input => input.trim() ? true : 'Query cannot be empty.'
+        }
+      ]);
+      searchQuery = ans.query;
+    }
+
+    const spinner = ora(chalk.cyan('Executing RAG search...')).start();
+    try {
+      const results = await retrieveChunks(searchQuery, 5);
+      spinner.succeed(chalk.green('Search finished. Here are the top 5 results:'));
+      
+      results.forEach((res, i) => {
+        console.log(boxen(
+          `${chalk.bold.yellow(`[Result ${i + 1}] Score: ${res.score.toFixed(4)}`)}\n` +
+          `${chalk.cyan('Source:')} ${res.metadata.docRelativePath} (${res.metadata.contentType})\n` +
+          `${chalk.dim('---')}\n` +
+          `${chalk.white(res.content)}`,
+          { padding: 0.5, margin: 0.5, borderStyle: 'round', borderColor: 'cyan' }
+        ));
+      });
+      process.exit(0);
+    } catch (err: any) {
+      spinner.fail(chalk.red(`Retrieval failed: ${err.message}`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('evaluate-retrieval')
+  .description('Run retrieval evaluation metrics')
+  .option('-k <value>', 'number of documents to retrieve', '10')
+  .option('--mode <mode>', 'evaluation scope mode: all, single, range')
+  .option('--index <value>', 'single test question index (1-150)')
+  .option('--start <value>', 'range start index (1-150)')
+  .option('--end <value>', 'range end index (1-150)')
+  .action(async (options) => {
+    const kVal = parseInt(options.k);
+    const mode = options.mode;
+    const index = options.index ? parseInt(options.index, 10) : undefined;
+    const start = options.start ? parseInt(options.start, 10) : undefined;
+    const end = options.end ? parseInt(options.end, 10) : undefined;
+    try {
+      await evaluateRetrieval(kVal, { mode, index, start, end });
+      console.log(chalk.green('\n[SUCCESS] Retrieval Evaluation completed!'));
+      process.exit(0);
+    } catch (err: any) {
+      console.error(chalk.red(`\n[ERROR] Retrieval Evaluation failed: ${err.message}`));
+      process.exit(1);
+    }
+  });
+
+// Run directly
 const isDirectRun = process.argv[1] && (
   process.argv[1].endsWith('run.ts') || 
   process.argv[1].endsWith('run.js')
 );
 
 if (isDirectRun) {
-  main();
+  const handleGracefulExit = (err: any) => {
+    if (err instanceof Error && (err.name === 'ExitPromptError' || err.message.includes('SIGINT') || err.message.includes('force closed'))) {
+      console.log(chalk.yellow('\n\nOperation cancelled. Goodbye!'));
+      process.exit(0);
+    }
+    console.error(chalk.red('Error:'), err);
+    process.exit(1);
+  };
+
+  // If no arguments or command specified, default to showing the menu
+  if (process.argv.length <= 2) {
+    showMainMenu().catch(handleGracefulExit);
+  } else {
+    program.parseAsync(process.argv).catch(handleGracefulExit);
+  }
 }

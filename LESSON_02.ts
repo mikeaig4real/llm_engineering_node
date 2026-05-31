@@ -104,13 +104,14 @@ export const metadata = {
   ],
   agnosticCode: `import { encodingForModel } from 'js-tiktoken';
 import { runInference } from './LESSON_01.js';
+import { logger } from './logger.js';
 
 // 1. Load the tokenizer model encoding locally
 const encoder = encodingForModel('gpt-4o');
 
 // 2. Estimate token count of input text
 const inputTokens = encoder.encode(promptText).length;
-console.log(\`Estimated input tokens: \${inputTokens}\`);
+logger.info(\`Estimated input tokens: \${inputTokens}\`);
 
 // 3. Perform inference and request raw completion output to inspect metadata
 const completion = await runInference(messages, undefined, { returnRaw: true });

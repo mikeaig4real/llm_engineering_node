@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { runInference } from './LESSON_01.js';
 import { runInteractiveIfDirect } from './run.js';
+import { logger } from './logger.js';
 
 // Schema defining our structured contact details
 export const ContactSchema = z.object({
@@ -30,6 +31,7 @@ export const metadata = {
   agnosticCode: `import { z } from 'zod';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { runInference } from './LESSON_01.js';
+import { logger } from './logger.js';
 
 const ContactSchema = z.object({
   name: z.string(),
@@ -46,7 +48,7 @@ const result = await runInference(messages, undefined, {
 // 2. Streaming (with callback)
 await runInference(messages, undefined, {
   stream: true,
-  streamCb: (chunk) => console.log(chunk)
+  streamCb: (chunk) => logger.info(chunk)
 });
 
 // 3. Constraints & Metadata
@@ -139,14 +141,14 @@ Process the following input and return ONLY the JSON representation:`;
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: 'user', content: prompt }
       ];
-      console.log('\n--- Live Stream Starting ---');
+      logger.info('--- Live Stream Starting ---');
       const finalResult = await runInference(messages, undefined, {
         stream: true,
         streamCb: (chunk) => {
           process.stdout.write(chunk);
         }
       });
-      console.log('\n--- Live Stream Ended ---');
+      logger.info('--- Live Stream Ended ---');
       return `Full Stream Content:\n\n${finalResult}`;
     }
 

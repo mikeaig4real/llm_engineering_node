@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import readline from 'node:readline/promises';
 import { runInference } from './LESSON_01.js';
 import { runInteractiveIfDirect } from './run.js';
+import { logger } from './logger.js';
 
 // Stateful todo list in-memory array
 export interface Todo {
@@ -177,7 +178,7 @@ export async function handleToolCalls(
     const { name } = toolCall.function;
     const args = JSON.parse(toolCall.function.arguments);
 
-    console.log(`\n\x1b[33m [Tool Invocation] Calling "${name}" with args:\x1b[0m`, args);
+    logger.info({ args }, `[Tool Invocation] Calling "${name}"`);
 
     try {
       const func = toolMap[name];
@@ -186,7 +187,7 @@ export async function handleToolCalls(
       }
 
       const result = await func(args);
-      console.log(`\x1b[32m [Tool Result] Success!\x1b[0m`);
+      logger.info('[Tool Result] Success!');
 
       messages.push({
         role: 'tool',
@@ -194,7 +195,7 @@ export async function handleToolCalls(
         content: JSON.stringify(result)
       });
     } catch (err: any) {
-      console.error(`\x1b[31m [Tool Error] Failed calling "${name}":\x1b[0m`, err.message);
+      logger.error(err, `[Tool Error] Failed calling "${name}"`);
       messages.push({
         role: 'tool',
         tool_call_id: toolCall.id,
@@ -253,10 +254,10 @@ if (response.choices[0].message.tool_calls) {
     const activeRl = rl || readline.createInterface({ input: process.stdin, output: process.stdout });
 
     try {
-      console.log(renderTodosTable());
-      console.log('\n\x1b[1m--- Interactive Todo Agent REPL ---\x1b[0m');
-      console.log('Ask the LLM to manage your todos (e.g. "Add a task to buy bread").');
-      console.log('Type "exit" to exit the REPL loop.\n');
+      logger.info(renderTodosTable());
+      logger.info('--- Interactive Todo Agent REPL ---');
+      logger.info('Ask the LLM to manage your todos (e.g. "Add a task to buy bread").');
+      logger.info('Type "exit" to exit the REPL loop.');
 
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         {
@@ -275,7 +276,7 @@ if (response.choices[0].message.tool_calls) {
 
         messages.push({ role: 'user', content: userInput });
 
-        console.log('\x1b[2mThinking...\x1b[0m');
+        logger.info('Thinking...');
         let completion = await runInference(messages, undefined, {
           tools: todoTools,
           returnRaw: true
@@ -284,7 +285,7 @@ if (response.choices[0].message.tool_calls) {
         const hadToolCalls = await handleToolCalls(completion, messages, todoToolMap);
 
         if (hadToolCalls) {
-          console.log('\x1b[2mProcessing tool results...\x1b[0m');
+          logger.info('Processing tool results...');
           completion = await runInference(messages, undefined, {
             returnRaw: true
           });
@@ -293,8 +294,8 @@ if (response.choices[0].message.tool_calls) {
         const finalResponse = completion.choices[0]?.message?.content || '';
         messages.push(completion.choices[0].message);
 
-        console.log(`\n\x1b[35mAgent:\x1b[0m ${finalResponse}`);
-        console.log(renderTodosTable());
+        logger.info(`Agent: ${finalResponse}`);
+        logger.info(renderTodosTable());
       }
 
       return 'REPL Session complete. You successfully exited the loop!';

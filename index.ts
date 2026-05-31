@@ -5,6 +5,7 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import { config } from './config.js';
 import { logger } from './logger.js';
+import { startTimer } from './rag_utils.js';
 
 const app = express();
 
@@ -13,9 +14,9 @@ app.use(express.json());
 
 // Request logging middleware
 app.use((req: Request, res: Response, next: NextFunction): void => {
-  const start = Date.now();
+  const timer = startTimer();
   res.on('finish', () => {
-    const duration = Date.now() - start;
+    const duration = timer.getElapsedMs();
     logger.info(
       {
         method: req.method,

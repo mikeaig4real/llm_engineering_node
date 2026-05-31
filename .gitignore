@@ -4,3 +4,5 @@ dist/
 .DS_Store
 Thumbs.db
 .lesson_progress.json
+.storage/
+scratch/
