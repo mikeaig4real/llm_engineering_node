@@ -1,5 +1,20 @@
 # Node.js LLM Engineering Toolkit
 
+<p align="center">
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-v20%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-v5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a>
+  <a href="https://expressjs.com/"><img src="https://img.shields.io/badge/Express-v5-000000?style=flat-square&logo=express&logoColor=white" alt="Express"></a>
+  <a href="https://sqlite.org/"><img src="https://img.shields.io/badge/SQLite-database-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite"></a>
+  <a href="https://orama.com/"><img src="https://img.shields.io/badge/Orama-v3-EC4899?style=flat-square" alt="Orama"></a>
+  <a href="https://github.com/hmartiro/hnswlib-node"><img src="https://img.shields.io/badge/HNSWLib-ANN-FF3670?style=flat-square" alt="HNSWLib"></a>
+  <a href="https://vitest.dev/"><img src="https://img.shields.io/badge/tests-Vitest-6E9F18?style=flat-square&logo=vitest&logoColor=white" alt="Vitest"></a>
+  <a href="https://zod.dev/"><img src="https://img.shields.io/badge/Zod-v4-3E67B1?style=flat-square&logo=zod&logoColor=white" alt="Zod"></a>
+  <a href="https://getpino.io/"><img src="https://img.shields.io/badge/Pino-logging-551A8B?style=flat-square&logo=pino&logoColor=white" alt="Pino"></a>
+  <a href="https://ollama.com/"><img src="https://img.shields.io/badge/Ollama-local--AI-000000?style=flat-square&logo=ollama&logoColor=white" alt="Ollama"></a>
+  <a href="https://openrouter.ai/"><img src="https://img.shields.io/badge/OpenRouter-inference-7E22CE?style=flat-square" alt="OpenRouter"></a>
+  <a href="https://swagger.io/"><img src="https://img.shields.io/badge/Swagger-docs-85EA2D?style=flat-square&logo=swagger&logoColor=black" alt="Swagger"></a>
+</p>
+
 A modern, high-performance, flat-structured TypeScript template designed for doing LLM engineering inside the Node.js ecosystem. It features **Express 5** (with native async error support), **Zod v4** (for robust request schema validation), **Vitest/Supertest** (for fast API testing), and **Pino** (for structured JSON logging ready for observability).
 
 Our core integrations establish connections to LLMs using the OpenAI SDK, counting and estimating tokens locally, calculating inference costs, configuring advanced parameters (like structured schema outputs, callback-based streaming, and cutoff limits), and invoking local tools/functions dynamically.
