@@ -43,10 +43,15 @@ export async function runInference(
     apiOpts.temperature = DEFAULT_TEMPERATURE;
   }
 
-  // Detect whether to use Ollama dynamically based on the target modelId or config
+  let activeModelId = modelId;
   const isTargetOllama = 
     OLLAMA_MODELS_SET.has(modelId) || 
     config.INFERENCE_PROVIDER === 'ollama';
+
+  if (isTargetOllama && apiOpts.tools && activeModelId.includes('gemma3')) {
+    logger.warn(`Model "${activeModelId}" does not support tools in Ollama. Falling back to "llama3.2:latest" for tool calling.`);
+    activeModelId = 'llama3.2:latest';
+  }
 
   const clientBaseUrl = isTargetOllama 
     ? `${config.OLLAMA_BASE_URL}/v1` 
@@ -70,14 +75,23 @@ export async function runInference(
     defaultHeaders: clientHeaders,
   });
 
-  logger.info({ messages, modelId, opts: apiOpts, baseUrl: clientBaseUrl }, "Sending request to LLM...");
+  logger.info({ messages, modelId: activeModelId, opts: apiOpts, baseUrl: clientBaseUrl }, "Sending request to LLM...");
 
   try {
-    const completion = await activeClient.chat.completions.create({
-      model: modelId,
+    const requestPayload: any = {
+      model: activeModelId,
       messages,
       ...apiOpts,
-    });
+    };
+
+    if (isTargetOllama) {
+      requestPayload.options = {
+        num_ctx: 4096,
+        ...(requestPayload.options || {})
+      };
+    }
+
+    const completion = await activeClient.chat.completions.create(requestPayload);
 
     if (returnRaw) {
       return completion;
@@ -92,7 +106,7 @@ export async function runInference(
     // It's a stream!
     logger.info("Received streaming response from LLM");
     let fullText = "";
-    for await (const chunk of completion) {
+    for await (const chunk of completion as any) {
       const content = chunk.choices[0]?.delta?.content || "";
       fullText += content;
       if (streamCb) {
@@ -117,13 +131,13 @@ export const metadata = {
     'Feel free to inspect the codebase and run other lessons to continue your learning journey.'
   ],
   explanations: [
-    'Initialize the OpenAI client pointing to the target base URL.',
-    'For OpenRouter, connect to https://openrouter.ai/api/v1. For Ollama, connect to http://localhost:11434/v1.',
-    'Structure the messages: APIs expect an array representing chat turns, each with a "role" and "content".',
-    'System Role: Provides context or rules to model persona (e.g. "You are a helpful assistant") that guide the entire chat behavior.',
-    'User Role: Represents the user query to the model.',
-    'Call the chat.completions.create endpoint, passing the target model and the system + user messages.',
-    'Temperature Parameter: Controls the creativity/randomness of the response. Lower values (near 0) are highly deterministic and consistent; higher values (near 1.0+) allow for more creativity and variation.'
+    'Endpoint Connections: In LLM engineering, we query model completion endpoints via HTTP requests. We configure these endpoints (e.g., OpenRouter or local Ollama) by providing their "baseURL".',
+    'OpenAI SDK client: To simplify querying, we instantiate the "OpenAI" SDK client. This client wraps the endpoint configuration from Step 1 and handles API key headers.',
+    'Roles & Messages array: Models expect inputs as a structured array of chat turns. Each turn has a "role" (like "system" or "user") and "content".',
+    'The System Prompt: This is the first message in the array from Step 3. It establishes the rules, constraints, and identity of the LLM before user input.',
+    'The User Prompt: This is the second message in the array from Step 3. It represents the actual user query or instruction that the model needs to address.',
+    'Inference Execution: Using the client from Step 2 and the messages array from Step 3, we call the "chat.completions.create" endpoint to submit our payload and await the model\'s output.',
+    'Temperature Control: When calling the completion endpoint in Step 6, we pass a "temperature" parameter. Lower values (near 0) produce highly deterministic, consistent text, whereas higher values (near 1) allow for more creative variation.'
   ],
   agnosticCode: `import OpenAI from 'openai';
 import { config } from './config.js';

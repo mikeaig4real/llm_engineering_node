@@ -1,8 +1,10 @@
 import OpenAI from 'openai';
 import readline from 'node:readline/promises';
+import chalk from 'chalk';
 import { runInference } from './LESSON_01.js';
 import { runInteractiveIfDirect } from './run.js';
 import { logger } from './logger.js';
+import { config } from './config.js';
 
 // Stateful todo list in-memory array
 export interface Todo {
@@ -217,10 +219,13 @@ export const metadata = {
     'The agent detected user intent, requested matching local database changes (tool calls), and received the formatted execution results back to produce final responses.'
   ],
   explanations: [
-    'Define Tool Schema: Structure each tool with a name, description, and Zod/JSON-schema describing parameters.',
-    'Expose Tools: Pass the tool schema array to chat completions using the "tools" options payload.',
-    'Model Detection: The LLM chooses whether to call a tool or reply in natural language.',
-    'Execution Loop: If tool_calls are returned, parse arguments, execute local code, return responses with role="tool", and query the model again.'
+    'The Concept of Tool Calling: LLMs cannot access external databases or execute actions on their own. We resolve this by defining local functions (tools) that the model can request to run.',
+    'Tool Schemas: To let the model know about the tools from Step 1, we write schemas describing their name, purpose, and required parameter shapes (using JSON schema structures).',
+    'Exposing Tools: We pass the tool schema array from Step 2 to the completion request using the "tools" options parameter.',
+    'Intent Detection & Interception: When calling the model with tools from Step 3, the model decides if it needs to run a function. If it does, it pauses generation and returns a "tool_calls" request containing the function name and structured JSON arguments.',
+    'Tool Execution Mapping: We match the name requested in Step 4 against a local dictionary mapping names to actual JavaScript functions. We parse the arguments and execute the local task.',
+    'Unified Chat History: After executing the function in Step 5, we append both the assistant\'s tool call request and the function output (as a message with role: "tool") to the chat history array.',
+    'Final Synthesis Request: We submit the updated chat history from Step 6 back to the model, allowing it to read the result of the function call and generate the final answer.'
   ],
   agnosticCode: `import { runInference } from './LESSON_01.js';
 
@@ -282,11 +287,11 @@ if (response.choices[0].message.tool_calls) {
           returnRaw: true
         });
 
-        const hadToolCalls = await handleToolCalls(completion, messages, todoToolMap);
-
-        if (hadToolCalls) {
+        while (completion.choices[0]?.message?.tool_calls && completion.choices[0].message.tool_calls.length > 0) {
           logger.info('Processing tool results...');
+          await handleToolCalls(completion, messages, todoToolMap);
           completion = await runInference(messages, undefined, {
+            tools: todoTools,
             returnRaw: true
           });
         }
@@ -308,3 +313,199 @@ if (response.choices[0].message.tool_calls) {
 };
 
 runInteractiveIfDirect(import.meta.url, metadata);
+
+/**
+ * Executes a streaming inference request to the LLM, outputting text chunks
+ * directly to the terminal in real-time while accumulating and aggregating
+/**
+ * Helper to check if a buffered stream segment is a raw JSON tool call or greeting wrapper
+ * (frequently returned by small models like Llama 3.2 in tool environments) and parse it.
+ */
+function handleInterceptedJsonWrapper(
+  buffer: string,
+  tools?: OpenAI.Chat.Completions.ChatCompletionTool[]
+): { content: string | null; toolCall?: any } | null {
+  const trimmed = buffer.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && parsed.name) {
+      const toolName = parsed.name;
+      const toolArgs = parsed.parameters || parsed.arguments || {};
+
+      // Check if this matches a registered tool name
+      const isRegisteredTool = tools && tools.some(t => (t as any).function?.name === toolName);
+
+      if (isRegisteredTool) {
+        return {
+          content: null,
+          toolCall: {
+            id: `call_intercepted_${Math.random().toString(36).substring(2, 9)}`,
+            type: 'function',
+            function: {
+              name: toolName,
+              arguments: typeof toolArgs === 'string' ? toolArgs : JSON.stringify(toolArgs)
+            }
+          }
+        };
+      } else {
+        // It's a dummy tool call or greeting wrapper (e.g. "hello", "greet", "empty")
+        return {
+          content: "Hello! How can I assist you with Insurellm today?"
+        };
+      }
+    }
+  } catch (e) {
+    // Not valid JSON
+  }
+
+  return null;
+}
+
+/**
+ * Executes a streaming inference request to the LLM, outputting text chunks
+ * directly to the terminal in real-time while accumulating and aggregating
+ * any tool call delta chunks for agent execution.
+ */
+export async function runStreamingAgentInference(
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+  tools?: OpenAI.Chat.Completions.ChatCompletionTool[],
+  modelId: string = config.INFERENCE_MODEL
+): Promise<{
+  content: string | null;
+  toolCalls?: OpenAI.Chat.Completions.ChatCompletionMessageToolCall[];
+}> {
+  const completion = await runInference(messages, modelId, {
+    tools,
+    stream: true,
+    returnRaw: true
+  });
+
+  let fullContent = '';
+  let toolCallsAggregator: any[] = [];
+  let isBuffering = false;
+  let buffer = '';
+
+  for await (const chunk of completion) {
+    const choice = chunk.choices[0];
+    if (!choice) continue;
+
+    const delta = choice.delta;
+
+    // Stream text content chunks to stdout in real-time
+    if (delta.content) {
+      fullContent += delta.content;
+
+      if (!isBuffering && fullContent.trim().startsWith('{')) {
+        isBuffering = true;
+      }
+
+      if (isBuffering) {
+        buffer += delta.content;
+      } else {
+        process.stdout.write(chalk.green(delta.content));
+      }
+    }
+
+    // Accumulate tool call JSON delta chunks
+    if (delta.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        if (!toolCallsAggregator[tc.index]) {
+          toolCallsAggregator[tc.index] = {
+            id: '',
+            type: 'function',
+            function: { name: '', arguments: '' }
+          };
+        }
+        const current = toolCallsAggregator[tc.index];
+        if (tc.id) current.id += tc.id;
+        if (tc.type) current.type = tc.type;
+        if (tc.function?.name) current.function.name += tc.function.name;
+        if (tc.function?.arguments) current.function.arguments += tc.function.arguments;
+      }
+    }
+  }
+
+  // Handle buffered content at the end to detect plain JSON tool wrappers
+  if (isBuffering) {
+    const parsedWrapper = handleInterceptedJsonWrapper(buffer, tools);
+    if (parsedWrapper) {
+      if (parsedWrapper.toolCall) {
+        toolCallsAggregator.push(parsedWrapper.toolCall);
+      } else if (parsedWrapper.content) {
+        fullContent = parsedWrapper.content;
+        process.stdout.write(chalk.green(parsedWrapper.content));
+      }
+    } else {
+      // Just print the raw buffer as is
+      process.stdout.write(chalk.green(buffer));
+    }
+  }
+
+  const toolCalls = toolCallsAggregator.filter(tc => tc && tc.id);
+
+  return {
+    content: fullContent || null,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined
+  };
+}
+
+/**
+ * Agnostic, modular helper to check, parse, and execute tool calls requested by a streaming LLM.
+ * Updates the chat message history in-place with Assistant calls and Tool responses.
+ */
+export async function handleStreamingToolCalls(
+  result: { content: string | null; toolCalls?: OpenAI.Chat.Completions.ChatCompletionMessageToolCall[] },
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+  toolMap: Record<string, Function>
+): Promise<boolean> {
+  if (!result.toolCalls || result.toolCalls.length === 0) {
+    return false;
+  }
+
+  // Push assistant request containing the tool calls
+  messages.push({
+    role: 'assistant',
+    content: result.content,
+    tool_calls: result.toolCalls
+  });
+
+  for (const toolCall of result.toolCalls) {
+    if (toolCall.type === 'function') {
+      const fn = (toolCall as any).function;
+      const { name } = fn;
+      const args = JSON.parse(fn.arguments);
+
+      logger.info({ args }, `[Tool Invocation] Calling "${name}"`);
+
+      try {
+        const func = toolMap[name];
+        if (!func) {
+          throw new Error(`Tool function "${name}" not found in toolMap.`);
+        }
+
+        const outcome = await func(args);
+        logger.info('[Tool Result] Success!');
+
+        messages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: typeof outcome === 'string' ? outcome : JSON.stringify(outcome)
+        });
+      } catch (err: any) {
+        logger.error(err, `[Tool Error] Failed calling "${name}"`);
+        messages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: JSON.stringify({ error: err.message })
+        });
+      }
+    }
+  }
+
+  return true;
+}
+

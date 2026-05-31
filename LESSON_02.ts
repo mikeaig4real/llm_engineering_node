@@ -97,10 +97,12 @@ export const metadata = {
     'Remember that local estimation is a fast, free, offline approximation. Exact usage is always returned by the API metadata and is the basis for billing.'
   ],
   explanations: [
-    'What are Tokens? LLMs do not read words; they read "tokens" (chunks of characters, typically ~4 characters or 0.75 words per token).',
-    'Local Estimation: We load a tokenizer encoding (e.g. gpt-4o) using js-tiktoken to count input tokens offline (for $0 cost).',
-    'Actual API Usage: The completion response includes usage statistics detailing input (prompt) and output (completion) tokens.',
-    'Cost Calculations: API providers bill per 1 Million tokens. We calculate and compare costs using rates for Gemini 2.5 Flash and GPT-4o.'
+    'Understanding Tokens: LLMs process text in small units called "tokens" (chunks of characters, e.g., ~4 characters or 0.75 words each) rather than raw words.',
+    'Tokenizer Models: A tokenizer splits raw text into token IDs based on a dictionary. In Step 1, we learned that LLMs read tokens; different LLMs use different tokenizer mappings (e.g. Tiktoken for OpenAI, LlamaTokenizer for Meta).',
+    'Local Token Count Estimation: By loading a tokenizer model from Step 2, we can count the tokens in our prompt offline for free before sending it, using libraries like "js-tiktoken".',
+    'Token Cost Rates: LLM providers publish pricing rates for their models, typically defined as cost per 1 Million input and output tokens.',
+    'API Usage Metadata: When we submit the prompt from Step 3, the LLM endpoint returns a "usage" metadata block detailing the actual count of prompt (input) tokens and completion (output) tokens processed.',
+    'Financial Cost Calculation: Using the actual token counts from Step 5 and the pricing rates from Step 4, we calculate the financial cost of our inference request in USD.'
   ],
   agnosticCode: `import { encodingForModel } from 'js-tiktoken';
 import { runInference } from './LESSON_01.js';

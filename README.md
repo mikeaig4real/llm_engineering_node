@@ -74,6 +74,11 @@ To run inference and/or embeddings fully locally using Ollama:
     
     OLLAMA_BASE_URL=http://localhost:11434
     ```
+4.  **Configure Ollama Context Window (`num_ctx`)**:
+    *   **Recommendation**: A context window size of **8,000 (`8192`)** or **16,000 (`16384`)** tokens is recommended for local execution.
+    *   **Why**: By default, Ollama initializes models with a small `2048` token context window. In Lesson 5's hybrid RAG search, retrieving 10 chunks (roughly 3,000 - 5,000 tokens) plus system instructions and chat history will easily overflow `2048` tokens, leading to dropped context or inference failures.
+    *   **Context Constraints**: If your hardware limits you to a lower context window (e.g., `4096`), you must reduce the retrieval limit count (e.g., from 10 to 4 chunks in `LESSON_05.ts`) to ensure requests fit inside the context window.
+
 
 ### 3. Run in Development Mode
 Start the live-reloading dev server powered by `tsx`:
@@ -247,6 +252,7 @@ When configuring the lesson arguments inside the interactive terminal, you can s
 *   `streaming` - Outputs words in real-time as they stream from the API.
 *   `token_limit` - Enforces a maximum token boundary and logs completion reasons.
 
+
 ---
 
 ## Lesson 4: Tool Calling (Function Calling) & LLM Agents
@@ -272,6 +278,20 @@ You can launch the lesson interactively in two ways:
 *   **Tool Schema Definitions**: Shows how to structure tools as functions with parameters defined using standard JSON schema definitions.
 *   **Agnostic Code & Execution Mapping**: Implements a modular `handleToolCalls` handler that automatically executes requested actions and routes execution outcomes back to the assistant in a unified chat history.
 *   **Interactive Terminal REPL**: Launches a live terminal interface where you can chat naturally with the agent (e.g. *"add buy groceries"* or *"mark task 1 as done"*), seeing the local function triggers and updating/rendering an ASCII table in real time.
+*   **ReAct Agent Looping**: Replaced the single-step tool execution logic with a standard `while` loop that recursively executes tool calls as long as the LLM requests them (`finish_reason === 'tool_calls'`). This allows the agent to chain multiple operations (like listing tasks, creating a task, and listing them again) dynamically in a single user turn.
+
+### Streaming & Tool Calling Integration (`runStreamingAgentInference`)
+
+Exposing tools to a streaming assistant introduces design complexity. We created a specialized helper `runStreamingAgentInference` and its companion `handleStreamingToolCalls` in `LESSON_04.ts` to solve this:
+* **The Challenge**: During a streaming turn, the API yields a stream of tiny delta chunk packets. If the model chooses to respond directly, these packets contain text snippets (`delta.content`). If the model decides to invoke a tool, they instead contain incremental JSON slices (`delta.tool_calls`) representing function names and arguments.
+* **The Solution**: The helper intercepts each delta packet in real-time. If it receives text content, it streams it directly to `process.stdout` so the user experiences zero latency. If it detects tool calling packets, it buffers and aggregates the JSON strings in-memory. Once the stream ends, it parses the completed arguments and triggers the local database search tool.
+
+> [!IMPORTANT]
+> **Why Streaming and Structured Outputs Cannot Be Enabled Together**
+> In modern LLM engineering, **Structured Outputs** (e.g. enforcing JSON schema matching using `response_format` or Zod objects) and **Streaming** are mutually exclusive for schema-validated generation:
+> 1. **Buffering & Validation**: Schema validation requires the entire JSON payload to be completely generated and parsed to ensure compliance before any data is returned.
+> 2. **Parsing Failure Risks**: If raw tokens are streamed instantly as they are produced, there is no way to guarantee or enforce that the final output matches the schema in real-time.
+> Therefore, for applications requiring real-time user-facing streams, we must fall back to natural text outputs or custom client-side parsing instead of hard-enforcing JSON schemas at the API level.
 
 ---
 
@@ -290,6 +310,20 @@ To build a decoupled and highly testable retrieval system, we established an abs
 At query time, the system performs parallel retrievals across both Orama and HNSWLib, fusing their ranking candidates using **Reciprocal Rank Fusion (RRF)**:
 $$RRF(d) = \sum_{m \in M} \frac{1}{60 + \text{rank}_m(d)}$$
 The top candidate chunks are then hydrated directly from SQLite and returned as structured search snippets.
+
+### Agentic RAG Optimization: Routing with Tool Calling (`invokeRag`)
+
+To prevent performance bottlenecks, we implemented an **agentic tool-based RAG pipeline**. 
+
+* **The Inefficiency**: In a standard naive RAG flow, every user message compulsory triggers document keyword and vector retrieval. For simple interactions (e.g. *"Hi"*, *"Hello"*, *"How are you?"*, or general pleasantries), performing database retrieval is highly inefficient, increases token consumption, and introduces unnecessary latency.
+* **The Solution**: We expose a tool called `invokeRag` to the LLM. The agent is instructed to evaluate the query first:
+  * **Direct Response**: For greetings and general chat, it responds directly in natural language without triggering any search.
+  * **Tool Invocation**: For questions requiring Insurellm specific policies, employee data, or histories, it invokes `invokeRag(query)`. The client executes the hybrid search and returns the hydrated results to the model to synthesize the grounded answer.
+
+
+
+
+
 
 ```mermaid
 flowchart TD
@@ -370,18 +404,39 @@ During evaluation, our retrieval pipeline originally performed below expectation
           i++;
         }
         ```
+*   **Challenge 4: Multi-Turn Conversation Reference & Retrieval Score Dilution**
+    *   *Issue*: During multi-turn chat interactions, the user may ask follow-up questions referencing pronouns (e.g., asking *"Who is the founder..?"* after *"Tell me about the company"*). If the agent queries the search index with the raw question, retrieval fails due to lack of descriptive keywords. Furthermore, rewriting the query to prepend the company name (e.g., `"Insurellm founder"`) results in retrieval matches across every contract and careers document (since `"Insurellm"` appears in almost all files), diluting retrieval scores and drowning out the target employee profile.
+    *   *Diagnosis*: Direct pronoun queries lack keywords, and generic words like `"Insurellm"` dominate BM25 and vector similarity scores.
+    *   *Solution*: We updated the agent's system instructions to:
+        1. Rewrite queries dynamically using conversation history to replace pronouns with concrete entities.
+        2. Avoid stop words and generic company terms like `"Insurellm"`, prioritizing high-entropy search terms (e.g., rewriting *"Who is the founder..?"* to `"founder"` or `"company founder"` instead of `"Insurellm founder"`).
+*   **Challenge 5: Local Ollama Context Limit Overflows & Retrieval Constraints**
+    *   *Issue*: Running the RAG chatbot with a local Ollama model (`llama3.2`) resulted in missing context, cut-off outputs, or API errors on longer conversations.
+    *   *Diagnosis*: Ollama's default context window is often restricted to `2048` tokens. Ingesting 10 retrieved document chunks (roughly 3,000–5,000 tokens) plus chat history and system prompts immediately exceeded this limit.
+    *   *Solution*: We documented configurations to increase Ollama's context window (`num_ctx`) to `8192` or `16384` tokens. For hardware-limited systems, we established a fallback guideline to reduce the RAG chunk retrieval limit (e.g. from 10 to 4 chunks in `LESSON_05.ts`) to ensure the payload fits the context.
+*   **Challenge 6: Context Window Bloat in Long Conversations (7+ Turns)**
+    *   *Issue*: In extended multi-turn chat sessions (7+ turns), token consumption escalated rapidly, exceeding 30,000 tokens. This caused slow inference speeds, high API costs, and context window failures on local LLMs.
+    *   *Diagnosis*: Each RAG retrieval appended up to 10 context chunks (~4,000 tokens) to the history. Piling up these historical document dumps in the chat history bloated the active context window.
+    *   *Solution*: We implemented **Context-Preserving History Pruning** in `LESSON_05.ts`. At the completion of each assistant response, the REPL loop sweeps previous turns' `role: "tool"` messages and replaces their contents with a tiny summary placeholder (`"[Pruned: RAG search context omitted from history to save tokens]"`). This satisfies API structure rules while reducing context payload by over 85% and eliminating historical retrieval noise.
+*   **Challenge 7: Heading/Subheading Dissociation during Ingestion**
+    *   *Issue*: Markdown lists, requirements, or descriptions under specific sub-headers (like job openings or product features) were severed from their parent titles during chunking. When queried (e.g., about the Senior Full Stack Engineer role), RAG retrieved the lists without the job title, or retrieved the job title without the details, causing incomplete or incorrect responses.
+    *   *Diagnosis*: Naive markdown chunking split the document into isolated paragraph/list chunks. If the title of a role was a bolded paragraph, it was ingested separately from the bullet points underneath it, leaving the bullet points with no contextual connection.
+    *   *Solution*: We implemented a **Hierarchical Context-Retaining Chunker** in `rag_ingest.ts`. It groups sequential markdown elements under active headings and prepends the full active heading hierarchy (e.g. `# Careers > ## Current Opportunities > ### Engineering`) to every chunk. This ensures that every chunk contains the complete semantic path context.
+
 
 ### Final Retrieval Evaluation Benchmarks (150 Questions)
 
 Following the implementation of these optimizations, a full evaluation run on the golden dataset of 150 questions demonstrated significant performance improvements:
-*   **Mean Reciprocal Rank (MRR)**: `0.6828`
-*   **Mean nDCG**: `0.7202`
-*   **Keyword Coverage**: `91.49%` (344 / 376 keywords found in retrieved snippets)
-*   **Mean Item Coverage**: `91.82%`
+*   **Mean Reciprocal Rank (MRR)**: `0.8544` (from `0.6828`)
+*   **Mean nDCG**: `0.8476` (from `0.7202`)
+*   **Keyword Coverage**: `97.34%` (366 / 376 keywords found in retrieved snippets, from `91.49%`)
+*   **Mean Item Coverage**: `97.70%` (from `91.82%`)
 
 #### Performance Breakdown by Category
-*   **`temporal` (`0.7948` MRR / `0.8180` nDCG)**: Highly distinct date/timeline keywords yield near-perfect retrieval.
-*   **`numerical` (`0.7458` MRR / `0.7861` nDCG)**: Accurate numerical matching across contracts.
-*   **`direct_fact` (`0.7041` MRR / `0.7411` nDCG)**: Facts successfully routed to top ranks due to stopword filtering and heading merging.
-*   **`spanning` (`0.5487` MRR / `0.6107` nDCG)**: Solid retrieval quality considering that spanning queries target information distributed across multiple document regions.
-
+*   **`direct_fact` (`0.8967` MRR / `0.8711` nDCG)**: Facts successfully routed to top ranks due to stopword filtering, element grouping, and parent heading context inheritance.
+*   **`temporal` (`0.9833` MRR / `0.9595` nDCG)**: Highly distinct date/timeline keywords yield near-perfect retrieval.
+*   **`numerical` (`0.8583` MRR / `0.8647` nDCG)**: Accurate numerical matching across contracts.
+*   **`comparative` (`0.8389` MRR / `0.8666` nDCG)**: Solid capability in retrieving records for comparison.
+*   **`relationship` (`0.8417` MRR / `0.8559` nDCG)**: Strong entity connection mapping.
+*   **`spanning` (`0.6676` MRR / `0.6912` nDCG)**: Significant improvements in spanning queries targeting multiple document regions.
+*   **`holistic` (`0.6988` MRR / `0.7282` nDCG)**: Enhanced performance on high-level documents summaries.

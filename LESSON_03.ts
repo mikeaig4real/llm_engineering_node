@@ -23,10 +23,12 @@ export const metadata = {
     'Feel free to inspect the codebase and run other lessons to continue your learning journey.'
   ],
   explanations: [
-    'Multishot Prompting: Format a prompt with system guidelines and examples, then manually parse JSON.',
-    'Structured Outputs: Use Zod validation via zodResponseFormat to guarantee the completions payload matches our ContactSchema.',
-    'Streaming: Pass stream: true with an agnostic streamCb callback to print chunks in real-time as they arrive.',
-    'Token Limit: Pass max_tokens and returnRaw: true to inspect truncated responses, finish reasons, and usage metrics.'
+    'Multishot Prompting: We can guide an LLM\'s response structure by providing context examples (input/output pairs) in the system prompt. However, we must manually parse the output string as JSON which is error-prone.',
+    'JSON Schemas: To avoid manual parsing from Step 1, we define a strict schema (like Zod) that represents the exact shape of data we expect.',
+    'Structured Outputs: We pass the Zod schema from Step 2 to the API using "zodResponseFormat". The model matches this schema exactly, guaranteeing a clean JSON output.',
+    'Decoupled Streaming: Rather than waiting for the entire text to generate (high latency), we can stream responses token-by-token. We pass a "streamCb" callback to handle and print each chunk instantly.',
+    'Generational Constraints: We can enforce safety or budget boundaries by specifying a "max_tokens" limit on the request from Step 3 or 4, truncating outputs that exceed our threshold.',
+    'Finish Reasons: By inspecting the raw API metadata returned from Step 5, we read the "finish_reason" (e.g. "length" or "stop") to determine if the generation stopped naturally or hit a constraint.'
   ],
   agnosticCode: `import { z } from 'zod';
 import { zodResponseFormat } from 'openai/helpers/zod';
@@ -182,3 +184,4 @@ Metadata:
 };
 
 runInteractiveIfDirect(import.meta.url, metadata);
+

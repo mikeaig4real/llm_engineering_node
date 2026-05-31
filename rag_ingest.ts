@@ -150,59 +150,119 @@ async function processFile(
   // Parse markdown elements
   const rawElements = parseMarkdown(content);
   
-  // Merge headings with their immediate succeeding non-heading elements to preserve context
-  const elements: typeof rawElements = [];
-  for (let i = 0; i < rawElements.length; i++) {
-    const el = rawElements[i];
-    if (el.type === 'heading' && i + 1 < rawElements.length && rawElements[i + 1].type !== 'heading') {
-      const nextEl = rawElements[i + 1];
-      elements.push({
-        ...el,
-        text: `${el.text}\n${nextEl.text}`,
-        raw: `${el.raw}\n${nextEl.raw}`,
-        items: nextEl.items,
-        headers: nextEl.headers,
-        rows: nextEl.rows,
-        lang: nextEl.lang
-      });
-      i++; // Skip the next element as it has been merged
+  const groupedChunks: {
+    text: string;
+    raw: string;
+    type: string;
+    depth?: number;
+    items?: string[];
+    headers?: string[];
+    rows?: string[][];
+    lang?: string;
+  }[] = [];
+
+  let currentAccumulator: typeof rawElements = [];
+  let currentLength = 0;
+  let activeHeadings: string[] = [];
+
+  for (const el of rawElements) {
+    if (el.type === 'heading') {
+      // Flush current accumulator before starting a new heading section
+      if (currentAccumulator.length > 0) {
+        const headingPrefix = activeHeadings.filter(Boolean).join('\n\n') + '\n\n';
+        const text = (headingPrefix + currentAccumulator.map(x => x.text).join('\n\n')).trim();
+        const raw = (headingPrefix + currentAccumulator.map(x => x.raw).join('\n\n')).trim();
+        
+        const firstEl = currentAccumulator[0];
+        groupedChunks.push({
+          text,
+          raw,
+          type: firstEl.type,
+          depth: el.depth,
+          items: currentAccumulator.flatMap(x => x.items || []),
+          headers: firstEl.headers,
+          rows: firstEl.rows,
+          lang: firstEl.lang
+        });
+        currentAccumulator = [];
+        currentLength = 0;
+      }
+      
+      // Update active headings
+      const depth = el.depth || 1;
+      activeHeadings = activeHeadings.slice(0, depth - 1);
+      activeHeadings[depth - 1] = el.raw.trim();
     } else {
-      elements.push(el);
+      const elLength = el.text.length;
+      // If adding this element would exceed 1000 characters, flush first
+      if (currentLength + elLength > 1000 && currentAccumulator.length > 0) {
+        const headingPrefix = activeHeadings.filter(Boolean).join('\n\n') + '\n\n';
+        const text = (headingPrefix + currentAccumulator.map(x => x.text).join('\n\n')).trim();
+        const raw = (headingPrefix + currentAccumulator.map(x => x.raw).join('\n\n')).trim();
+        const firstEl = currentAccumulator[0];
+        groupedChunks.push({
+          text,
+          raw,
+          type: firstEl.type,
+          items: currentAccumulator.flatMap(x => x.items || []),
+          headers: firstEl.headers,
+          rows: firstEl.rows,
+          lang: firstEl.lang
+        });
+        currentAccumulator = [];
+        currentLength = 0;
+      }
+      currentAccumulator.push(el);
+      currentLength += elLength;
     }
+  }
+
+  // Flush remaining elements
+  if (currentAccumulator.length > 0) {
+    const headingPrefix = activeHeadings.filter(Boolean).join('\n\n') + '\n\n';
+    const text = (headingPrefix + currentAccumulator.map(x => x.text).join('\n\n')).trim();
+    const raw = (headingPrefix + currentAccumulator.map(x => x.raw).join('\n\n')).trim();
+    const firstEl = currentAccumulator[0];
+    groupedChunks.push({
+      text,
+      raw,
+      type: firstEl.type,
+      items: currentAccumulator.flatMap(x => x.items || []),
+      headers: firstEl.headers,
+      rows: firstEl.rows,
+      lang: firstEl.lang
+    });
   }
 
   let contentIndex = 0;
 
-  for (const element of elements) {
-    const elementText = element.text.trim();
-    if (!elementText) continue;
+  for (const chunk of groupedChunks) {
+    const chunkTextStr = chunk.text.trim();
+    if (!chunkTextStr) continue;
 
-    // Dual-Stage Chunking Check
     let chunksToIngest: { text: string; raw: string }[] = [];
 
-    if (elementText.length <= 1000) {
-      // Element is safe size, ingest directly
-      chunksToIngest.push({ text: elementText, raw: element.raw });
+    if (chunkTextStr.length <= 1200) {
+      chunksToIngest.push({ text: chunkTextStr, raw: chunk.raw });
     } else {
-      // Element is too large, fall back to sliding window chunking
       logger.info(
-        { charLength: elementText.length, type: element.type },
-        `Element exceeds 1000 chars. Falling back to sliding-window chunking.`
+        { charLength: chunkTextStr.length, type: chunk.type },
+        `Grouped chunk exceeds 1200 chars. Falling back to sliding-window chunking.`
       );
-      const subChunks = chunkText(elementText, file.path, 1000, 200);
+      const subChunks = chunkText(chunkTextStr, file.path, 1000, 200);
       chunksToIngest = subChunks.map(sc => ({ text: sc.text, raw: sc.text }));
     }
 
-    for (const chunk of chunksToIngest) {
+    for (const subChunk of chunksToIngest) {
       await ingestChunk(
-        chunk,
+        subChunk,
         file,
-        element.type,
-        element.depth,
-        element.items,
-        element.headers,
-        element.rows,
-        element.lang,
+        chunk.type as IngestedNode['contentType'],
+        chunk.depth,
+        chunk.items && chunk.items.length > 0 ? chunk.items : undefined,
+        chunk.headers,
+        chunk.rows,
+        chunk.lang,
         contentIndex++,
         resources,
         tracker
