@@ -35,6 +35,31 @@ LOG_LEVEL=info
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 ```
 
+#### Optional: Local Ollama Setup (Inference & Embeddings)
+To run inference and/or embeddings fully locally using Ollama:
+1.  **Install Ollama**: Download and install it from [ollama.com](https://ollama.com).
+2.  **Pull Required Models**:
+    ```bash
+    # For RAG Embeddings (e.g. bge-large)
+    ollama pull bge-large
+    
+    # For LLM Inference (e.g. llama3.2)
+    ollama pull llama3.2
+    ```
+3.  **Update `.env` Configuration**:
+    ```env
+    # Embedding Settings
+    EMBEDDING_PROVIDER=ollama
+    EMBEDDING_MODEL=bge-large
+    EMBEDDING_DIMENSIONS=1024
+    
+    # Inference Settings
+    INFERENCE_PROVIDER=ollama
+    INFERENCE_MODEL=llama3.2
+    
+    OLLAMA_BASE_URL=http://localhost:11434
+    ```
+
 ### 3. Run in Development Mode
 Start the live-reloading dev server powered by `tsx`:
 ```bash
@@ -65,14 +90,50 @@ Compiles and bundles the output directly into `/dist`.
 - **Pino**: High-performance structured JSON logging.
 - **Vitest & Supertest**: Developer-friendly API and request unit testing.
 - **TSX**: Modern and fast TypeScript runner (watch-mode enabled).
+- **HNSWLib (`hnswlib-node`)**: Core approximate nearest neighbor (ANN) vector indexing.
+- **Orama Search Index (`@orama/orama`)**: Memory-resident keyword/full-text search.
+- **Better-SQLite3 (`better-sqlite3`)**: Relational database adapter for chunk metadata persistence.
+- **Xenova Transformers (`@xenova/transformers`)**: Fast in-memory local ONNX feature extraction embeddings.
+- **Commander & Inquirer**: Premium command line parsing and interactive console prompt dashboard UI.
 
-### Available Scripts
-- `npm run dev` - Run development server in watch mode.
-- `npm run build` - Clean output directory and compile TypeScript.
-- `npm run start` - Start compiled production server.
-- `npm run test` - Run test suite.
-- `npm run test:watch` - Launch Vitest interactive runner.
-- `npm run lesson <number> [args]` - Dynamically run a specific lesson (e.g., `npm run lesson 1`) and pass optional arguments.
+### Available Scripts & CLI Usage
+
+You can run various operations using the pre-configured npm scripts. Below are the execution and configuration options for each script:
+
+*   **Run Development Server**:
+    ```bash
+    npm run dev
+    ```
+*   **Run Tests**:
+    ```bash
+    npm run test
+    ```
+*   **Launch Interactive CLI Menu**:
+    ```bash
+    npm run cli
+    ```
+    Launches a gamified interactive terminal dashboard to seamlessly switch between running lessons, triggering ingestions, querying the index, and running evaluations.
+*   **Ingest Knowledge Base**:
+    ```bash
+    npm run ingest
+    ```
+    Clears local index caches and runs the dual-stage context-aware markdown chunking pipeline on the `knowledge-base/` folder.
+*   **Search Hybrid Index**:
+    ```bash
+    npm run retrieve -- "[query]"
+    ```
+    Searches the combined Orama and HNSW indices using Reciprocal Rank Fusion (RRF), displaying the top-5 hydrated SQLite metadata matches inside formatted terminal cards.
+*   **Evaluate Retrieval Engine**:
+    ```bash
+    # Run evaluation on all 150 test questions (will prompt interactively)
+    npm run eval
+    
+    # Run evaluation for a single question index
+    npm run eval -- --mode single --index 9
+    
+    # Run evaluation for a range of question indices
+    npm run eval -- --mode range --start 1 --end 10
+    ```
 
 ---
 
