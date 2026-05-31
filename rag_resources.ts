@@ -148,6 +148,58 @@ export async function setupTransformersExtractor(modelName: string): Promise<any
 }
 
 /**
+ * Connects to OpenRouter's unified embeddings API endpoint.
+ */
+export async function setupOpenRouterExtractor(apiKey: string, modelName: string): Promise<any> {
+  logger.info({ model: modelName }, 'Initializing OpenRouter embedding service...');
+  const openrouterEndpoint = 'https://openrouter.ai/api/v1/embeddings';
+
+  // Verify connection with a test prompt
+  const testRes = await fetch(openrouterEndpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: modelName,
+      input: 'test connection'
+    })
+  });
+
+  if (!testRes.ok) {
+    const detail = await testRes.text();
+    throw new Error(`OpenRouter returned status ${testRes.status}: ${detail}`);
+  }
+
+  logger.info('OpenRouter embedding connection test succeeded.');
+
+  return async (text: string) => {
+    const res = await fetch(openrouterEndpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: modelName,
+        input: text
+      })
+    });
+
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(`OpenRouter embedding generation failed: ${detail}`);
+    }
+
+    const data = (await res.json()) as { data: { embedding: number[] }[] };
+    return {
+      data: new Float32Array(data.data[0].embedding)
+    };
+  };
+}
+
+/**
  * Initializes RAG resources orchestrating databases and embedding models.
  */
 export async function initializeResources(): Promise<{
@@ -205,6 +257,20 @@ export async function initializeResources(): Promise<{
         extractorInstance = makeOfflineExtractor(config.EMBEDDING_DIMENSIONS);
       }
     } 
+    else if (config.EMBEDDING_PROVIDER === 'openrouter') {
+      try {
+        extractorInstance = await setupOpenRouterExtractor(
+          config.OPENROUTER_API_KEY || '',
+          config.EMBEDDING_MODEL
+        );
+      } catch (err: any) {
+        logger.warn(
+          { error: err.message, model: config.EMBEDDING_MODEL },
+          'OpenRouter embedding service connection failed. Falling back to offline mockup generator.'
+        );
+        extractorInstance = makeOfflineExtractor(config.EMBEDDING_DIMENSIONS);
+      }
+    }
     else {
       // Default: transformers local ONNX
       try {

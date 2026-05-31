@@ -7,7 +7,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   OPENROUTER_API_KEY: z.string().optional(),
-  EMBEDDING_PROVIDER: z.enum(['transformers', 'ollama', 'offline']).default('transformers'),
+  EMBEDDING_PROVIDER: z.enum(['transformers', 'ollama', 'openrouter', 'offline']).default('transformers'),
   EMBEDDING_MODEL: z.string().default('Xenova/bge-large-en-v1.5'),
   EMBEDDING_DIMENSIONS: z.coerce.number().default(1024),
   OLLAMA_BASE_URL: z.string().default('http://localhost:11434'),
@@ -18,12 +18,13 @@ const envSchema = z.object({
   HNSW_INDEX_PATH: z.string().default('.storage/hnsw.index'),
   HNSW_MAX_ELEMENTS: z.coerce.number().default(10000),
 }).superRefine((data, ctx) => {
-  if (data.NODE_ENV !== 'test' && data.INFERENCE_PROVIDER === 'openrouter') {
-    if (!data.OPENROUTER_API_KEY || data.OPENROUTER_API_KEY === 'your_openrouter_api_key_here') {
+  if (data.NODE_ENV !== 'test') {
+    const isUsingOpenRouter = data.INFERENCE_PROVIDER === 'openrouter' || data.EMBEDDING_PROVIDER === 'openrouter';
+    if (isUsingOpenRouter && (!data.OPENROUTER_API_KEY || data.OPENROUTER_API_KEY === 'your_openrouter_api_key_here')) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['OPENROUTER_API_KEY'],
-        message: 'OPENROUTER_API_KEY is required when INFERENCE_PROVIDER is set to openrouter.',
+        message: 'OPENROUTER_API_KEY is required when using OpenRouter (inference or embeddings).',
       });
     }
   }

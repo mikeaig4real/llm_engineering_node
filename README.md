@@ -79,6 +79,18 @@ To run inference and/or embeddings fully locally using Ollama:
     *   **Why**: By default, Ollama initializes models with a small `2048` token context window. In Lesson 5's hybrid RAG search, retrieving 10 chunks (roughly 3,000 - 5,000 tokens) plus system instructions and chat history will easily overflow `2048` tokens, leading to dropped context or inference failures.
     *   **Context Constraints**: If your hardware limits you to a lower context window (e.g., `4096`), you must reduce the retrieval limit count (e.g., from 10 to 4 chunks in `LESSON_05.ts`) to ensure requests fit inside the context window.
 
+#### Optional: OpenRouter Setup for RAG Embeddings
+To avoid running models locally and leverage cloud-based embedding endpoints:
+1.  **Configure `.env`**:
+    ```env
+    EMBEDDING_PROVIDER=openrouter
+    EMBEDDING_MODEL=openai/text-embedding-3-large
+    EMBEDDING_DIMENSIONS=3072
+    OPENROUTER_API_KEY=your_openrouter_api_key_here
+    ```
+    *Note: Standard embedding models available on OpenRouter include `openai/text-embedding-3-large` (3072 dimensions), `openai/text-embedding-3-small` (1536 dimensions), and `cohere/embed-english-v3.0` (1024 dimensions).*
+
+
 
 ### 3. Run in Development Mode
 Start the live-reloading dev server powered by `tsx`:
