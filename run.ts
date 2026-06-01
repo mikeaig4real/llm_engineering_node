@@ -370,7 +370,7 @@ async function promptReturnToMenu() {
 async function showMainMenu() {
   clearScreen();
   console.log(boxen(
-    chalk.bold.cyan("LLM Engineering Bootcamp - Node.js CLI Tools"),
+    chalk.bold.cyan("LLM Engineering - Node.js CLI Tools"),
     {
       padding: 1,
       margin: 1,
