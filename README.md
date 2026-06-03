@@ -92,6 +92,15 @@ To avoid running models locally and leverage cloud-based embedding endpoints:
 
 
 
+### ⚠️ CRITICAL: Run Document Ingestion First
+Before attempting to run RAG search queries, execute retrieval evaluation benchmarks, or launch Lesson 04 & Lesson 05 interactive agent/chatbot programs, you **MUST run document ingestion first** to build the necessary search indexes. 
+
+Run the following command to ingest the knowledge base:
+```bash
+npm run ingest
+```
+This script parses the markdown files, chunks them using the context-retaining chunker, calculates embeddings, and populates the database and vector files under `.storage/`. Code-wise checks are built into the resource manager and CLI runner to automatically detect missing indexes and guide you to perform ingestion.
+
 ### 3. Run in Development Mode
 Start the live-reloading dev server powered by `tsx`:
 ```bash

@@ -10,6 +10,7 @@ import boxen from 'boxen';
 import { ingestDocuments } from './rag_ingest.js';
 import { retrieveChunks } from './rag_retrieve.js';
 import { evaluateRetrieval } from './eval_rag_retrieve.js';
+import { checkIngestionStatus } from './rag_resources.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -417,6 +418,37 @@ async function showMainMenu() {
       await showMainMenu();
       return;
     }
+
+    if (lessonAnswers.lesson === '05') {
+      const status = checkIngestionStatus();
+      if (!status.ingested) {
+        console.log(chalk.bold.red(`\n[WARNING] RAG Ingestion Check Failed!`));
+        console.log(chalk.red(`Reason: ${status.reason}`));
+        console.log(chalk.yellow(`Lesson 05 requires search index files that are created during document ingestion.`));
+        const confirm = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'runIngest',
+            message: 'Would you like to run document ingestion now?',
+            default: true
+          }
+        ]);
+        if (confirm.runIngest) {
+          try {
+            await ingestDocuments();
+            console.log(chalk.green('\n[SUCCESS] Document Ingestion completed successfully!'));
+          } catch (err: any) {
+            console.error(chalk.red(`\n[ERROR] Document Ingestion failed: ${err.message}`));
+            await promptReturnToMenu();
+            return;
+          }
+        } else {
+          await showMainMenu();
+          return;
+        }
+      }
+    }
+
     await launchLesson(lessonAnswers.lesson);
     await showMainMenu();
   } else if (answers.action === 'ingest') {
@@ -430,6 +462,15 @@ async function showMainMenu() {
     }
     await promptReturnToMenu();
   } else if (answers.action === 'retrieve') {
+    const status = checkIngestionStatus();
+    if (!status.ingested) {
+      console.log(chalk.bold.red(`\n[WARNING] RAG Ingestion Check Failed!`));
+      console.log(chalk.red(`Reason: ${status.reason}`));
+      console.log(chalk.yellow(`Please run "Run Document Ingestion" from the main menu first.`));
+      await promptReturnToMenu();
+      return;
+    }
+
     const ans = await inquirer.prompt([
       {
         type: 'input',
@@ -457,6 +498,15 @@ async function showMainMenu() {
     }
     await promptReturnToMenu();
   } else if (answers.action === 'eval') {
+    const status = checkIngestionStatus();
+    if (!status.ingested) {
+      console.log(chalk.bold.red(`\n[WARNING] RAG Ingestion Check Failed!`));
+      console.log(chalk.red(`Reason: ${status.reason}`));
+      console.log(chalk.yellow(`Please run "Run Document Ingestion" from the main menu first.`));
+      await promptReturnToMenu();
+      return;
+    }
+
     const ans = await inquirer.prompt([
       {
         type: 'input',

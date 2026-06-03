@@ -130,7 +130,7 @@ const chatbotToolMap: Record<string, Function> = {
 export const metadata = {
   number: '05',
   title: 'Retrieval-Augmented Generation (RAG) & CLI Chatbot',
-  description: 'In this lesson, we explore Retrieval-Augmented Generation (RAG). RAG addresses LLM knowledge cutoffs and hallucinations by dynamically retrieving relevant facts from a local knowledge base to augment prompt context.',
+  description: 'In this lesson, we explore Retrieval-Augmented Generation (RAG). NOTE: This lesson is strictly contingent on running document ingestion first (via "npm run ingest") to populate the SQLite database, Orama keyword index, and HNSW vector index files. RAG addresses LLM knowledge cutoffs and hallucinations by dynamically retrieving relevant facts from a local knowledge base to augment prompt context.',
   conclusion: [
     'You have successfully built and run an Agentic Hybrid RAG Chatbot grounded in the Insurellm knowledge base.',
     'By utilizing Tool Calling and Streaming, the agent decides whether to invoke RAG (via the "invokeRag" tool) or respond directly (e.g. to simple greetings) and streams all generation turns word-by-word.'

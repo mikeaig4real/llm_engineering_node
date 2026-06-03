@@ -97,7 +97,7 @@ export async function retrieveChunks(query: string, limit = 10): Promise<Retriev
 
   try {
     // Retrieve singletons from shared resources
-    const { db, keywordIndex, vectorIndex, extractor } = await initializeResources();
+    const { db, keywordIndex, vectorIndex, extractor } = await initializeResources(true);
 
     // 1. Keyword search (Orama)
     const keywordTimer = startTimer();

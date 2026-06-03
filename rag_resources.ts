@@ -23,6 +23,22 @@ let extractorInstance: any = null;
 let initPromise: Promise<void> | null = null;
 
 /**
+ * Checks if document ingestion has been performed by verifying the existence of SQLite, Orama, and HNSW files.
+ */
+export function checkIngestionStatus(): { ingested: boolean; reason?: string } {
+  if (!fs.existsSync(config.SQLITE_DB_PATH)) {
+    return { ingested: false, reason: `SQLite database file not found at "${config.SQLITE_DB_PATH}".` };
+  }
+  if (!fs.existsSync(config.ORAMA_INDEX_PATH)) {
+    return { ingested: false, reason: `Orama keyword index file not found at "${config.ORAMA_INDEX_PATH}".` };
+  }
+  if (!fs.existsSync(config.HNSW_INDEX_PATH)) {
+    return { ingested: false, reason: `HNSW vector index file not found at "${config.HNSW_INDEX_PATH}".` };
+  }
+  return { ingested: true };
+}
+
+/**
  * Initializes and connects to the SQLite Database at the specified path.
  */
 export async function setupSqlite(dbPath: string): Promise<SqliteDatabase> {
@@ -202,12 +218,19 @@ export async function setupOpenRouterExtractor(apiKey: string, modelName: string
 /**
  * Initializes RAG resources orchestrating databases and embedding models.
  */
-export async function initializeResources(): Promise<{
+export async function initializeResources(requireIngested = false): Promise<{
   db: SqliteDatabase;
   keywordIndex: OramaIndex;
   vectorIndex: HnswIndex;
   extractor: any;
 }> {
+  if (requireIngested) {
+    const status = checkIngestionStatus();
+    if (!status.ingested) {
+      throw new Error(`RAG Ingestion Check Failed: ${status.reason} You MUST run document ingestion first via 'npm run ingest'`);
+    }
+  }
+
   if (initPromise) {
     await initPromise;
     return {
